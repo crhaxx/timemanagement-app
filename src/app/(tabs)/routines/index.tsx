@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { RoutineFeelingSheet } from '@/components/routine-feeling-sheet';
 import { SymbolIcon } from '@/components/symbol-icon';
 import {
   Card,
@@ -40,6 +41,7 @@ export default function RoutinesScreen() {
   const today = localDateISO();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [logs, setLogs] = useState<RoutineLog[]>([]);
+  const [feelingRoutine, setFeelingRoutine] = useState<Routine | null>(null);
   const [loading, setLoading] = useState(supabase !== null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(supabaseConfigError);
@@ -83,7 +85,7 @@ export default function RoutinesScreen() {
     };
   }, [routines, today]);
 
-  async function setTodayStatus(routine: Routine, status: RoutineLogStatus | null) {
+  async function setTodayStatus(routine: Routine, status: RoutineLogStatus | null, note?: string | null) {
     if (!supabase) return;
     const existing = logByRoutine.get(routine.id);
 
@@ -103,7 +105,7 @@ export default function RoutinesScreen() {
       routine_id: routine.id,
       log_date: today,
       status,
-      note: existing?.note ?? null,
+      note: note !== undefined ? note : (existing?.note ?? null),
     };
     const result = existing
       ? await supabase
@@ -133,7 +135,11 @@ export default function RoutinesScreen() {
 
   function toggleDone(routine: Routine) {
     const current = logByRoutine.get(routine.id)?.status ?? null;
-    void setTodayStatus(routine, current === 'done' ? null : 'done');
+    if (current === 'done') {
+      void setTodayStatus(routine, null);
+      return;
+    }
+    setFeelingRoutine(routine);
   }
 
   function promptSkip(routine: Routine) {
@@ -142,7 +148,11 @@ export default function RoutinesScreen() {
       {
         label: current === 'done' ? 'Zrušit hotovo' : 'Hotovo',
         onPress: () => {
-          void setTodayStatus(routine, current === 'done' ? null : 'done');
+          if (current === 'done') {
+            void setTodayStatus(routine, null);
+            return;
+          }
+          setFeelingRoutine(routine);
         },
       },
       {
@@ -156,6 +166,17 @@ export default function RoutinesScreen() {
 
   return (
     <>
+      <RoutineFeelingSheet
+        visible={feelingRoutine !== null}
+        routineTitle={feelingRoutine?.title ?? ''}
+        onClose={() => setFeelingRoutine(null)}
+        onSave={(note) => {
+          if (!feelingRoutine) return;
+          const routine = feelingRoutine;
+          setFeelingRoutine(null);
+          void setTodayStatus(routine, 'done', note);
+        }}
+      />
       <Stack.Screen
         options={{
           headerRight: () => (

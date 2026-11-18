@@ -8,6 +8,7 @@ import { GoalSummary } from '@/components/home/goal-summary';
 import { RoutinesTile } from '@/components/home/routines-tile';
 import { JournalTile, SectionTile } from '@/components/home/section-tiles';
 import { AddSheet } from '@/components/add-sheet';
+import { RoutineFeelingSheet } from '@/components/routine-feeling-sheet';
 import { SymbolIcon } from '@/components/symbol-icon';
 import {
   Card,
@@ -102,6 +103,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(supabase !== null);
   const [refreshing, setRefreshing] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [feelingRoutine, setFeelingRoutine] = useState<Routine | null>(null);
   const [stepGoalId, setStepGoalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(supabaseConfigError);
 
@@ -229,11 +231,19 @@ export default function HomeScreen() {
       return;
     }
 
+    setFeelingRoutine(routine);
+  }
+
+  async function completeRoutineWithFeeling(routine: Routine, note: string | null) {
+    if (!supabase) return;
+    const existing = routineLogs.find((log) => log.routine_id === routine.id);
+    setFeelingRoutine(null);
+
     const payload = {
       routine_id: routine.id,
       log_date: today,
       status: 'done' as const,
-      note: existing?.note ?? null,
+      note,
     };
     const result = existing
       ? await supabase
@@ -270,6 +280,15 @@ export default function HomeScreen() {
 
   return (
     <View style={[ui.screen, { paddingTop: insets.top }]}>
+      <RoutineFeelingSheet
+        visible={feelingRoutine !== null}
+        routineTitle={feelingRoutine?.title ?? ''}
+        onClose={() => setFeelingRoutine(null)}
+        onSave={(note) => {
+          if (!feelingRoutine) return;
+          void completeRoutineWithFeeling(feelingRoutine, note);
+        }}
+      />
       <AddSheet
         visible={addOpen}
         onClose={() => setAddOpen(false)}

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { EffortPicker } from '@/components/effort-picker';
+import { RoutineFeelingSheet } from '@/components/routine-feeling-sheet';
 import {
   Caption,
   Card,
@@ -66,6 +67,7 @@ export default function RoutineDetailSheet() {
   const [focusAreaId, setFocusAreaId] = useState('');
   const [goalId, setGoalId] = useState('');
   const [editing, setEditing] = useState(false);
+  const [feelingOpen, setFeelingOpen] = useState(false);
   const [loading, setLoading] = useState(supabase !== null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(supabaseConfigError);
@@ -236,7 +238,7 @@ export default function RoutineDetailSheet() {
     router.back();
   }
 
-  async function setTodayStatus(status: RoutineLogStatus | null) {
+  async function setTodayStatus(status: RoutineLogStatus | null, note?: string | null) {
     if (!supabase || !routine) return;
 
     if (status === null) {
@@ -256,7 +258,7 @@ export default function RoutineDetailSheet() {
       routine_id: routine.id,
       log_date: today,
       status,
-      note: todayLog?.note ?? null,
+      note: note !== undefined ? note : (todayLog?.note ?? null),
     };
 
     const result = todayLog
@@ -303,7 +305,11 @@ export default function RoutineDetailSheet() {
   }
 
   function toggleDoneToday() {
-    void setTodayStatus(todayLog?.status === 'done' ? null : 'done');
+    if (todayLog?.status === 'done') {
+      void setTodayStatus(null);
+      return;
+    }
+    setFeelingOpen(true);
   }
 
   if (loading) {
@@ -329,6 +335,15 @@ export default function RoutineDetailSheet() {
 
   return (
     <View style={ui.screen}>
+      <RoutineFeelingSheet
+        visible={feelingOpen}
+        routineTitle={routine.title}
+        onClose={() => setFeelingOpen(false)}
+        onSave={(note) => {
+          setFeelingOpen(false);
+          void setTodayStatus('done', note);
+        }}
+      />
       <SheetHeader
         title={editing ? 'Upravit rutinu' : 'Rutina'}
         cancelLabel={editing ? 'Zpět' : 'Zavřít'}
@@ -521,7 +536,14 @@ export default function RoutineDetailSheet() {
               <SectionLabel title="Posledních 14 dní" />
               {recent.map(({ date, log }, index) => (
                 <Row key={date} last={index === recent.length - 1}>
-                  <Text style={styles.historyDate}>{formatJournalDate(date)}</Text>
+                  <View style={ui.flex}>
+                    <Text style={styles.historyDate}>{formatJournalDate(date)}</Text>
+                    {log?.note ? (
+                      <Caption numberOfLines={2} style={styles.historyNote}>
+                        {log.note}
+                      </Caption>
+                    ) : null}
+                  </View>
                   {log ? (
                     <Pill
                       label={ROUTINE_LOG_STATUS_LABELS[log.status]}
@@ -675,9 +697,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   historyDate: {
-    flex: 1,
     color: colors.text,
     fontSize: 15,
+  },
+  historyNote: {
+    marginTop: 2,
   },
   historyEmpty: {
     color: colors.tertiary,
