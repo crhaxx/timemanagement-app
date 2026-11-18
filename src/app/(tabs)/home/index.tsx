@@ -253,18 +253,32 @@ export default function HomeScreen() {
               Přehled
             </Text>
           </View>
-          <PressableScale
-            accessibilityRole="button"
-            accessibilityLabel="Přidat úkol"
-            hitSlop={8}
-            pressedScale={0.92}
-            onPress={() => {
-              haptic.light();
-              setAddOpen(true);
-            }}
-            style={styles.add}>
-            <SymbolIcon name="add" color={colors.accent} size={20} weight="semibold" />
-          </PressableScale>
+          <View style={styles.headerActions}>
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel="Nastavení"
+              hitSlop={8}
+              pressedScale={0.92}
+              onPress={() => {
+                haptic.light();
+                router.push('/settings');
+              }}
+              style={styles.add}>
+              <SymbolIcon name="settings" color={colors.accent} size={20} weight="semibold" />
+            </PressableScale>
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel="Přidat úkol"
+              hitSlop={8}
+              pressedScale={0.92}
+              onPress={() => {
+                haptic.light();
+                setAddOpen(true);
+              }}
+              style={styles.add}>
+              <SymbolIcon name="add" color={colors.accent} size={20} weight="semibold" />
+            </PressableScale>
+          </View>
         </View>
 
         {error ? <ErrorBanner>{error}</ErrorBanner> : null}
@@ -367,13 +381,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.35,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
   add: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
     backgroundColor: colors.surface,
     ...shadow,
   },

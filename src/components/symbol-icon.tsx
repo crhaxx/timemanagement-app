@@ -23,6 +23,8 @@ const ICONS = {
   chevronRight: { ios: 'chevron.right', android: 'chevron_right', ion: 'chevron-forward' },
   chevronLeft: { ios: 'chevron.left', android: 'chevron_left', ion: 'chevron-back' },
   trash: { ios: 'trash', android: 'delete', ion: 'trash-outline' },
+  bell: { ios: 'bell.fill', android: 'notifications', ion: 'notifications' },
+  settings: { ios: 'gearshape.fill', android: 'settings', ion: 'settings-outline' },
 } as const;
 
 export type AppIconName = keyof typeof ICONS;
