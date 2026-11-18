@@ -1,18 +1,20 @@
 {
   "expo": {
-    "name": "timemanagement_app",
-    "slug": "timemanagement_app",
+    "name": "Manager",
+    "slug": "manager",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "timemanagementapp",
-    "userInterfaceStyle": "dark",
+    "scheme": "manager",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F2F2F7",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "backgroundColor": "#F2F2F7"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0b0e13",
+        "backgroundColor": "#F2F2F7",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -28,11 +30,12 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0b0e13",
+          "backgroundColor": "#F2F2F7",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

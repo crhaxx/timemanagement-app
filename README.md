@@ -1,18 +1,24 @@
-# Brain dump
+# Manager
 
 Osobní time management: rychlý zápisník úkolů, backlog a přehled. Expo (SDK 58) + TypeScript, Expo Router a Supabase.
 
 ## Struktura
 
 ```text
-src/app/_layout.tsx          Kořenový Stack
-src/app/(tabs)/_layout.tsx   Spodní lišta
-src/app/(tabs)/index.tsx     Přehled
-src/app/(tabs)/capture.tsx   Brain dump a backlog
+src/app/_layout.tsx              Kořenový Stack
+src/app/(tabs)/_layout.tsx       Nativní iOS tab bar
+src/app/(tabs)/home/index.tsx    Přehled
+src/app/(tabs)/goals/index.tsx   Dlouhodobé cíle
+src/app/(tabs)/journal/index.tsx Denní deník
+src/app/(tabs)/tasks/index.tsx   Úkoly (backlog)
+src/app/new-task.tsx             Modál: nový úkol
+src/app/new-goal.tsx             Modál: nový cíl
+src/app/goal/[id].tsx            Modál: detail cíle
+src/app/journal-edit.tsx         Modál: zápis do deníku
 src/lib/supabase.ts          Supabase klient z EXPO_PUBLIC_* proměnných
-src/types/database.ts        Typy tabulky tasks
-src/constants/colors.ts      Paleta tmavého režimu
-supabase/schema.sql          Tabulka tasks, index a RLS politiky
+src/types/database.ts        Typy tabulek tasks, goals a journal_entries
+src/constants/colors.ts      iOS světlá paleta
+supabase/schema.sql          Tabulky, indexy a RLS politiky
 .env.example                 Vzor proměnných
 ```
 
@@ -41,8 +47,10 @@ Po změně `.env` udělej v klientovi plný reload.
 
 ## Chování
 
-- Záložka **Přehled** ukazuje počet otevřených úkolů, odhad času, důležité položky a rozpad podle kontextu.
-- Záložka **Přidat** je brain dump: uloží řádek se `status = 'backlog'`.
+- Záložka **Přehled** ukazuje počet otevřených úkolů, odhad času, důležité položky, cíle a rozpad podle kontextu.
+- Záložka **Cíle** spravuje dlouhodobé cíle v `goals` (stav, termín, podcíle).
+- Záložka **Deník** zapisuje jeden souhrn na den do `journal_entries`.
+- Záložka **Přidat** je brain dump: uloží řádek se `status = 'backlog'`, volitelně navázaný na cíl.
 - Seznam backlogu bere jen řádky se `status = 'backlog'`.
 - **Hotovo** nastaví `status = 'done'` a položka ze seznamu zmizí.
 - **Smazat** řádek odstraní. Potáhni seznam dolů pro obnovení ze Supabase.
