@@ -11,6 +11,9 @@ import {
 } from 'react-native';
 
 import { RoutineFeelingSheet } from '@/components/routine-feeling-sheet';
+import { QuoteBlock } from '@/components/routines/quote-block';
+import { RoutineCard } from '@/components/routines/routine-card';
+import { TodayHero } from '@/components/routines/today-hero';
 import { SymbolIcon } from '@/components/symbol-icon';
 import {
   Card,
@@ -24,21 +27,37 @@ import {
   ui,
 } from '@/components/ui';
 import { colors, palette } from '@/constants/colors';
-import { formatMinutes, ROUTINE_STATUS_LABELS } from '@/constants/labels';
+import { ROUTINE_STATUS_LABELS } from '@/constants/labels';
 import { showActions } from '@/lib/actions';
-import {
-  isRoutineDueOn,
-  ROUTINE_COLUMNS,
-  ROUTINE_LOG_COLUMNS,
-  routineScheduleLabel,
-} from '@/lib/data';
-import { localDateISO } from '@/lib/dates';
+import { isRoutineDueOn, ROUTINE_COLUMNS, routineScheduleLabel } from '@/lib/data';
+import { daysUntil, formatTaskWhen, localDateISO, shiftDate, weekdayShort } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import {
+  daySummary,
+  fetchRoutineLogsSince,
+  indexLogsByRoutine,
+  nextRoutineDate,
+  perfectDayStreak,
+  routineDayState,
+  routineStreak,
+  writeRoutineLog,
+} from '@/lib/routines';
 import { supabase, supabaseConfigError } from '@/lib/supabase';
 import type { Routine, RoutineLog, RoutineLogStatus } from '@/types/database';
 
+/** How far back logs are loaded; streaks on this screen are counted within it. */
+const HISTORY_DAYS = 120;
+const WEEK = [6, 5, 4, 3, 2, 1, 0];
+
+function nextLabel(date: string) {
+  const days = daysUntil(date);
+  if (days === 1) return 'Zítra';
+  return days < 7 ? weekdayShort(date) : formatTaskWhen(date);
+}
+
 export default function RoutinesScreen() {
   const today = localDateISO();
+  const since = shiftDate(today, 1 - HISTORY_DAYS);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [logs, setLogs] = useState<RoutineLog[]>([]);
   const [feelingRoutine, setFeelingRoutine] = useState<Routine | null>(null);
@@ -50,19 +69,19 @@ export default function RoutinesScreen() {
     if (!supabase) return;
     const [routineRows, logRows] = await Promise.all([
       supabase.from('routines').select(ROUTINE_COLUMNS).order('created_at', { ascending: true }),
-      supabase.from('routine_logs').select(ROUTINE_LOG_COLUMNS).eq('log_date', today),
+      fetchRoutineLogsSince(since),
     ]);
-    const failure = routineRows.error ?? logRows.error;
+    const failure = routineRows.error?.message ?? logRows.error;
     if (failure) {
-      setError(failure.message);
+      setError(failure);
     } else {
       setRoutines(routineRows.data ?? []);
-      setLogs(logRows.data ?? []);
+      setLogs(logRows.data);
       setError(null);
     }
     setLoading(false);
     setRefreshing(false);
-  }, [today]);
+  }, [since]);
 
   useFocusEffect(
     useCallback(() => {
@@ -70,62 +89,61 @@ export default function RoutinesScreen() {
     }, [load]),
   );
 
-  const logByRoutine = useMemo(() => {
-    const map = new Map<string, RoutineLog>();
-    for (const log of logs) map.set(log.routine_id, log);
-    return map;
-  }, [logs]);
+  const logsByRoutine = useMemo(() => indexLogsByRoutine(logs), [logs]);
 
-  const { dueToday, otherActive, archived } = useMemo(() => {
-    const active = routines.filter((routine) => routine.status === 'active');
+  const { active, dueToday, otherActive, archived } = useMemo(() => {
+    const activeRoutines = routines.filter((routine) => routine.status === 'active');
     return {
-      dueToday: active.filter((routine) => isRoutineDueOn(routine, today)),
-      otherActive: active.filter((routine) => !isRoutineDueOn(routine, today)),
+      active: activeRoutines,
+      // Timed routines in the order of the day, the rest after them.
+      dueToday: activeRoutines
+        .filter((routine) => isRoutineDueOn(routine, today))
+        .sort((a, b) => (a.preferred_time ?? '99').localeCompare(b.preferred_time ?? '99')),
+      otherActive: activeRoutines.filter((routine) => !isRoutineDueOn(routine, today)),
       archived: routines.filter((routine) => routine.status !== 'active'),
     };
   }, [routines, today]);
 
+  const week = useMemo(
+    () => WEEK.map((ago) => daySummary(active, logsByRoutine, shiftDate(today, -ago), today)),
+    [active, logsByRoutine, today],
+  );
+
+  const dayStreak = useMemo(
+    () => perfectDayStreak(active, logsByRoutine, today, since),
+    [active, logsByRoutine, today, since],
+  );
+
+  function statusToday(routine: Routine) {
+    return logsByRoutine.get(routine.id)?.get(today)?.status ?? null;
+  }
+
   async function setTodayStatus(routine: Routine, status: RoutineLogStatus | null, note?: string | null) {
-    if (!supabase) return;
-    const existing = logByRoutine.get(routine.id);
+    const existing = logsByRoutine.get(routine.id)?.get(today) ?? null;
+    if (status === null && !existing) return;
 
-    if (status === null) {
-      if (!existing) return;
-      const { error: deleteError } = await supabase.from('routine_logs').delete().eq('id', existing.id);
-      if (deleteError) {
-        setError(deleteError.message);
-        return;
-      }
-      setLogs((current) => current.filter((log) => log.id !== existing.id));
-      haptic.light();
-      return;
-    }
-
-    const payload = {
-      routine_id: routine.id,
-      log_date: today,
+    const { log, error: writeError } = await writeRoutineLog({
+      routineId: routine.id,
+      date: today,
+      existing,
       status,
-      note: note !== undefined ? note : (existing?.note ?? null),
-    };
-    const result = existing
-      ? await supabase
-          .from('routine_logs')
-          .update({ status: payload.status, note: payload.note })
-          .eq('id', existing.id)
-          .select(ROUTINE_LOG_COLUMNS)
-          .single()
-      : await supabase.from('routine_logs').insert(payload).select(ROUTINE_LOG_COLUMNS).single();
-
-    if (result.error) {
-      setError(result.error.message);
+      note,
+    });
+    if (writeError) {
+      haptic.error();
+      setError(writeError);
       return;
     }
 
     setLogs((current) => {
-      const without = current.filter((log) => log.routine_id !== routine.id);
-      return result.data ? [...without, result.data] : without;
+      const without = current.filter(
+        (item) => !(item.routine_id === routine.id && item.log_date === today),
+      );
+      return log ? [log, ...without] : without;
     });
-    haptic.success();
+    setError(null);
+    if (status === null) haptic.light();
+    else haptic.success();
   }
 
   function openRoutine(routine: Routine) {
@@ -134,26 +152,21 @@ export default function RoutinesScreen() {
   }
 
   function toggleDone(routine: Routine) {
-    const current = logByRoutine.get(routine.id)?.status ?? null;
-    if (current === 'done') {
+    if (statusToday(routine) === 'done') {
       void setTodayStatus(routine, null);
       return;
     }
+    haptic.light();
     setFeelingRoutine(routine);
   }
 
   function promptSkip(routine: Routine) {
-    const current = logByRoutine.get(routine.id)?.status ?? null;
+    const current = statusToday(routine);
+    haptic.light();
     showActions(routine.title, [
       {
         label: current === 'done' ? 'Zrušit hotovo' : 'Hotovo',
-        onPress: () => {
-          if (current === 'done') {
-            void setTodayStatus(routine, null);
-            return;
-          }
-          setFeelingRoutine(routine);
-        },
+        onPress: () => toggleDone(routine),
       },
       {
         label: current === 'skipped' ? 'Zrušit přeskočení' : 'Přeskočit dnes',
@@ -169,6 +182,11 @@ export default function RoutinesScreen() {
       <RoutineFeelingSheet
         visible={feelingRoutine !== null}
         routineTitle={feelingRoutine?.title ?? ''}
+        streak={
+          feelingRoutine
+            ? routineStreak(feelingRoutine, logsByRoutine.get(feelingRoutine.id), today, since) + 1
+            : undefined
+        }
         onClose={() => setFeelingRoutine(null)}
         onSave={(note) => {
           if (!feelingRoutine) return;
@@ -213,49 +231,87 @@ export default function RoutinesScreen() {
         {loading ? (
           <ActivityIndicator color={colors.accent} style={styles.loader} />
         ) : routines.length === 0 ? (
-          <EmptyState
-            icon="routine"
-            color={colors.routine}
-            title="Co chceš opakovat?"
-            message="Rutiny jsou malé návyky, které chceš dělat pravidelně — cvičení, čtení, úklid."
-            actionTitle="Přidat první rutinu"
-            onAction={() => router.push('/new-routine')}
-          />
+          <>
+            <EmptyState
+              icon="routine"
+              color={colors.routine}
+              title="Co chceš opakovat?"
+              message="Rutiny jsou malé návyky, které chceš dělat pravidelně — cvičení, čtení, úklid."
+              actionTitle="Přidat první rutinu"
+              onAction={() => router.push('/new-routine')}
+            />
+            <Card style={styles.quoteCard}>
+              <QuoteBlock mood="build" seed={today} />
+            </Card>
+          </>
         ) : (
           <>
+            {active.length > 0 ? (
+              <TodayHero
+                today={today}
+                streak={dayStreak}
+                week={week}
+                items={dueToday.map((routine) => ({
+                  id: routine.id,
+                  status: statusToday(routine),
+                  minutes: routine.duration_minutes,
+                }))}
+              />
+            ) : null}
+
             {dueToday.length > 0 ? (
-              <>
-                <SectionHeader title="Dnes" />
-                <Card clip>
-                  {dueToday.map((routine, index) => (
-                    <RoutineRow
+              <View style={styles.cards}>
+                {dueToday.map((routine) => {
+                  const routineLogs = logsByRoutine.get(routine.id);
+                  const streak = routineStreak(routine, routineLogs, today, since);
+                  return (
+                    <RoutineCard
                       key={routine.id}
                       routine={routine}
-                      logStatus={logByRoutine.get(routine.id)?.status ?? null}
-                      last={index === dueToday.length - 1}
-                      showCheck
+                      status={statusToday(routine)}
+                      streak={streak}
+                      streakCapped={streak >= HISTORY_DAYS - 1}
+                      days={WEEK.map((ago) =>
+                        routineDayState(routine, routineLogs, shiftDate(today, -ago), today),
+                      )}
                       onPress={() => openRoutine(routine)}
                       onToggle={() => toggleDone(routine)}
                       onLongPress={() => promptSkip(routine)}
                     />
-                  ))}
-                </Card>
-              </>
+                  );
+                })}
+              </View>
             ) : null}
 
             {otherActive.length > 0 ? (
               <>
-                <SectionHeader title="Ostatní aktivní" />
+                <SectionHeader title="Jindy" />
                 <Card clip>
-                  {otherActive.map((routine, index) => (
-                    <RoutineRow
-                      key={routine.id}
-                      routine={routine}
-                      logStatus={null}
-                      last={index === otherActive.length - 1}
-                      onPress={() => openRoutine(routine)}
-                    />
-                  ))}
+                  {otherActive.map((routine, index) => {
+                    const next = nextRoutineDate(routine, today);
+                    return (
+                      <Row
+                        key={routine.id}
+                        last={index === otherActive.length - 1}
+                        inset={64}
+                        onPress={() => openRoutine(routine)}
+                        accessibilityLabel={routine.title}>
+                        <TintIcon name="routine" color={colors.routine} />
+                        <View style={ui.flex}>
+                          <Text style={ui.title} numberOfLines={1}>
+                            {routine.title}
+                          </Text>
+                          <Caption numberOfLines={1}>{routineScheduleLabel(routine)}</Caption>
+                        </View>
+                        {next ? (
+                          <View>
+                            <Pill label={nextLabel(next)} color={colors.routine} />
+                          </View>
+                        ) : null}
+                        <SymbolIcon name="chevronRight" color={colors.tertiary} size={14} />
+                      </Row>
+                    );
+                  })}
                 </Card>
               </>
             ) : null}
@@ -273,10 +329,13 @@ export default function RoutinesScreen() {
                       <Text style={[ui.title, styles.archivedTitle]} numberOfLines={1}>
                         {routine.title}
                       </Text>
-                      <Pill
-                        label={ROUTINE_STATUS_LABELS[routine.status]}
-                        color={routine.status === 'paused' ? palette.orange : palette.gray}
-                      />
+                      <View>
+                        <Pill
+                          label={ROUTINE_STATUS_LABELS[routine.status]}
+                          color={routine.status === 'paused' ? palette.orange : palette.gray}
+                        />
+                      </View>
+                      <SymbolIcon name="chevronRight" color={colors.tertiary} size={14} />
                     </Row>
                   ))}
                 </Card>
@@ -289,76 +348,6 @@ export default function RoutinesScreen() {
   );
 }
 
-function RoutineRow({
-  routine,
-  logStatus,
-  last,
-  showCheck,
-  onPress,
-  onToggle,
-  onLongPress,
-}: {
-  routine: Routine;
-  logStatus: RoutineLogStatus | null;
-  last?: boolean;
-  showCheck?: boolean;
-  onPress: () => void;
-  onToggle?: () => void;
-  onLongPress?: () => void;
-}) {
-  const done = logStatus === 'done';
-  const skipped = logStatus === 'skipped';
-  const schedule = routineScheduleLabel(routine);
-  const duration = routine.duration_minutes ? formatMinutes(routine.duration_minutes) : null;
-
-  return (
-    <View>
-      <View style={styles.row}>
-        {showCheck && onToggle ? (
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: done }}
-            accessibilityLabel={done ? 'Zrušit hotovo' : 'Označit jako hotové'}
-            hitSlop={8}
-            onPress={onToggle}
-            style={({ pressed }) => pressed && styles.pressed}>
-            <View style={[styles.check, done && styles.checkDone, skipped && styles.checkSkipped]}>
-              {done || skipped ? (
-                <SymbolIcon
-                  name={done ? 'checkmark' : 'close'}
-                  color="#FFFFFF"
-                  size={14}
-                  weight="bold"
-                />
-              ) : null}
-            </View>
-          </Pressable>
-        ) : (
-          <TintIcon name="routine" color={colors.routine} />
-        )}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={routine.title}
-          onPress={onPress}
-          onLongPress={onLongPress}
-          style={({ pressed }) => [styles.rowBody, pressed && styles.pressed]}>
-          <View style={ui.flex}>
-            <Text style={[ui.title, (done || skipped) && styles.doneTitle]} numberOfLines={1}>
-              {routine.title}
-            </Text>
-            <Caption numberOfLines={1}>
-              {[schedule, duration].filter(Boolean).join(' · ')}
-            </Caption>
-          </View>
-          {skipped && !done ? <Pill label="Přeskočeno" color={palette.gray} /> : null}
-          <SymbolIcon name="chevronRight" color={colors.tertiary} size={14} />
-        </Pressable>
-      </View>
-      {last ? null : <View style={styles.separator} />}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   loader: {
     marginTop: 32,
@@ -366,45 +355,11 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.4,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 56,
+  cards: {
+    gap: 10,
   },
-  rowBody: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.separator,
-    marginLeft: 56,
-  },
-  check: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: colors.routine,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkDone: {
-    backgroundColor: colors.routine,
-    borderColor: colors.routine,
-  },
-  checkSkipped: {
-    backgroundColor: colors.muted,
-    borderColor: colors.muted,
-  },
-  doneTitle: {
-    color: colors.secondary,
-    fontWeight: '500',
+  quoteCard: {
+    padding: 16,
   },
   archivedTitle: {
     flex: 1,

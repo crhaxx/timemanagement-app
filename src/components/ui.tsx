@@ -22,6 +22,9 @@ export const RADIUS = 20;
 /** SF Rounded for large numerals on iOS; other platforms keep the system face. */
 export const ROUNDED = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
+/** Serif face reserved for quotes, so they read as someone else's voice. */
+export const SERIF = Platform.select({ ios: 'ui-serif', android: 'serif', default: 'Georgia' });
+
 /** Soft elevation shared by every white surface. */
 export const shadow: ViewStyle =
   Platform.OS === 'ios'
@@ -260,11 +263,14 @@ export function Chip({
   label,
   selected,
   color = colors.accent,
+  flat,
   onPress,
 }: {
   label: string;
   selected: boolean;
   color?: string;
+  /** Filled instead of raised, for chips that sit on a white surface. */
+  flat?: boolean;
   onPress: () => void;
 }) {
   return (
@@ -277,6 +283,7 @@ export function Chip({
       }}
       style={({ pressed }) => [
         styles.chip,
+        flat && styles.chipFlat,
         selected && { backgroundColor: color },
         pressed && { opacity: 0.7 },
       ]}>
@@ -582,6 +589,11 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     maxWidth: '100%',
     ...shadow,
+  },
+  chipFlat: {
+    backgroundColor: colors.fill,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   chipText: {
     color: colors.text,

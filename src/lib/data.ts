@@ -15,7 +15,14 @@ export const ROUTINE_LOG_COLUMNS = 'id, routine_id, log_date, status, note, crea
 
 /** Whether an active routine is scheduled for the given local ISO date. */
 export function isRoutineDueOn(routine: Routine, isoDate: string) {
-  if (routine.status !== 'active') return false;
+  return routine.status === 'active' && isRoutineScheduledOn(routine, isoDate);
+}
+
+/** Whether the routine's schedule lands on the given local ISO date, whatever its status. */
+export function isRoutineScheduledOn(
+  routine: Pick<Routine, 'frequency' | 'days_of_week'>,
+  isoDate: string,
+) {
   const weekday = isoWeekday(isoDate);
   const dayOfMonth = parseLocalDate(isoDate).getDate();
   const days = routine.days_of_week ?? [];
@@ -36,7 +43,9 @@ export function isRoutineDueOn(routine: Routine, isoDate: string) {
 }
 
 /** Short schedule label, e.g. "Každý den · 21:20" or "Po, St, Pá". */
-export function routineScheduleLabel(routine: Routine) {
+export function routineScheduleLabel(
+  routine: Pick<Routine, 'frequency' | 'days_of_week' | 'preferred_time'>,
+) {
   const time = formatPreferredTime(routine.preferred_time);
   const days = routine.days_of_week ?? [];
   let base = ROUTINE_FREQUENCY_LABELS[routine.frequency];

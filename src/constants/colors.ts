@@ -43,6 +43,15 @@ export const colors = {
   inkFill: 'rgba(120, 120, 128, 0.34)',
 } as const;
 
+/** System colors as they appear on the `ink` surface. */
+export const onInk = {
+  teal: '#40C8E0',
+  green: '#30D158',
+  orange: '#FF9F0A',
+  red: '#FF453A',
+  separator: 'rgba(235, 235, 245, 0.16)',
+} as const;
+
 /** Returns `hex` with the given opacity, e.g. a soft tinted background for an icon. */
 export function tint(hex: string, alpha = 0.14) {
   const channel = Math.round(Math.min(1, Math.max(0, alpha)) * 255)

@@ -1,28 +1,35 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { EffortPicker } from '@/components/effort-picker';
 import { RoutineFeelingSheet } from '@/components/routine-feeling-sheet';
+import { Heatmap } from '@/components/routines/heatmap';
+import { QuoteBlock } from '@/components/routines/quote-block';
+import {
+  RoutineForm,
+  routineDraftValues,
+  routineToDraft,
+  type RoutineDraft,
+} from '@/components/routines/routine-form';
+import { SymbolIcon, type AppIconName } from '@/components/symbol-icon';
 import {
   Caption,
   Card,
-  ChoiceGroup,
   ErrorBanner,
+  Eyebrow,
   Pill,
-  PrimaryButton,
+  PressableScale,
+  ROUNDED,
   Row,
   SheetHeader,
-  TextButton,
+  TintIcon,
   ui,
 } from '@/components/ui';
-import { colors, palette } from '@/constants/colors';
+import { colors, onInk, palette } from '@/constants/colors';
 import {
   formatMinutes,
-  ROUTINE_FREQUENCY_LABELS,
   ROUTINE_LOG_STATUS_LABELS,
   ROUTINE_STATUS_LABELS,
-  WEEKDAY_LABELS,
 } from '@/constants/labels';
 import { confirmDestructive } from '@/lib/actions';
 import {
@@ -30,86 +37,81 @@ import {
   GOAL_COLUMNS,
   isRoutineDueOn,
   ROUTINE_COLUMNS,
-  ROUTINE_LOG_COLUMNS,
   routineScheduleLabel,
 } from '@/lib/data';
-import { formatJournalDate, localDateISO, shiftDate } from '@/lib/dates';
+import { daysUntil, formatJournalDate, localDateISO, shiftDate } from '@/lib/dates';
 import { useFocusAreas } from '@/lib/focus-areas';
 import { haptic } from '@/lib/haptics';
-import { supabase, supabaseConfigError } from '@/lib/supabase';
 import {
-  ROUTINE_FREQUENCIES,
-  ROUTINE_STATUSES,
-  type Goal,
-  type Routine,
-  type RoutineFrequency,
-  type RoutineLog,
-  type RoutineLogStatus,
-  type RoutineStatus,
-} from '@/types/database';
+  fetchRoutineLogsSince,
+  indexLogsByDate,
+  nextRoutineDate,
+  routineBestStreak,
+  routineCompletionRate,
+  routineStartDate,
+  routineStreak,
+  writeRoutineLog,
+} from '@/lib/routines';
+import { supabase, supabaseConfigError } from '@/lib/supabase';
+import type { Goal, Routine, RoutineLog, RoutineLogStatus, RoutineStatus } from '@/types/database';
 
-const ALL_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const;
+/** A year of logs: enough for the streaks, the record and the history grid. */
+const HISTORY_DAYS = 365;
+const RECENT_LOGS = 8;
+
+const LOG_COLORS: Record<RoutineLogStatus, string> = {
+  done: palette.green,
+  skipped: palette.orange,
+  missed: palette.gray,
+};
 
 export default function RoutineDetailSheet() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const today = localDateISO();
+  const since = shiftDate(today, 1 - HISTORY_DAYS);
   const { areas } = useFocusAreas();
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [logs, setLogs] = useState<RoutineLog[]>([]);
+  // Completions older than the loaded year, so the total stays exact.
+  const [olderDone, setOlderDone] = useState(0);
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [title, setTitle] = useState('');
-  const [notes, setNotes] = useState('');
-  const [skipRule, setSkipRule] = useState('');
-  const [frequency, setFrequency] = useState<RoutineFrequency>('daily');
-  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([...ALL_WEEKDAYS]);
-  const [duration, setDuration] = useState<number | null>(null);
-  const [preferredTime, setPreferredTime] = useState('');
-  const [focusAreaId, setFocusAreaId] = useState('');
-  const [goalId, setGoalId] = useState('');
-  const [editing, setEditing] = useState(false);
+  // The edit form's state; `null` while the routine is only being viewed.
+  const [draft, setDraft] = useState<RoutineDraft | null>(null);
   const [feelingOpen, setFeelingOpen] = useState(false);
   const [loading, setLoading] = useState(supabase !== null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(supabaseConfigError);
 
-  function fill(loaded: Routine) {
-    setTitle(loaded.title);
-    setNotes(loaded.notes ?? '');
-    setSkipRule(loaded.skip_rule ?? '');
-    setFrequency(loaded.frequency);
-    setDaysOfWeek(loaded.days_of_week?.length ? [...loaded.days_of_week] : [...ALL_WEEKDAYS]);
-    setDuration(loaded.duration_minutes);
-    setPreferredTime(formatPreferredTime(loaded.preferred_time) ?? '');
-    setFocusAreaId(loaded.focus_area_id ?? '');
-    setGoalId(loaded.goal_id ?? '');
-  }
-
   useEffect(() => {
     if (!supabase || !id) return;
     let cancelled = false;
-    const since = shiftDate(today, -13);
     void Promise.all([
       supabase.from('routines').select(ROUTINE_COLUMNS).eq('id', id).maybeSingle(),
+      fetchRoutineLogsSince(since, id),
+      supabase.from('goals').select(GOAL_COLUMNS).eq('status', 'active').order('created_at', { ascending: true }),
       supabase
         .from('routine_logs')
-        .select(ROUTINE_LOG_COLUMNS)
+        .select('id', { count: 'exact', head: true })
         .eq('routine_id', id)
-        .gte('log_date', since)
-        .order('log_date', { ascending: false }),
-      supabase.from('goals').select(GOAL_COLUMNS).eq('status', 'active').order('created_at', { ascending: true }),
-    ]).then(([routineResult, logResult, goalResult]) => {
+        .eq('status', 'done'),
+    ]).then(([routineResult, logResult, goalResult, countResult]) => {
       if (cancelled) return;
-      const queryError = routineResult.error ?? logResult.error ?? goalResult.error;
-      if (queryError) {
-        setError(queryError.message);
+      const failure =
+        routineResult.error?.message ??
+        logResult.error ??
+        goalResult.error?.message ??
+        countResult.error?.message;
+      if (failure) {
+        setError(failure);
       } else if (!routineResult.data) {
         setError('Rutina už neexistuje.');
       } else {
+        const loadedDone = logResult.data.filter((log) => log.status === 'done').length;
         setRoutine(routineResult.data);
-        fill(routineResult.data);
-        setLogs(logResult.data ?? []);
+        setLogs(logResult.data);
+        setOlderDone(Math.max(0, (countResult.count ?? loadedDone) - loadedDone));
         setGoals(goalResult.data ?? []);
-        setEditing(false);
+        setDraft(null);
         setError(null);
       }
       setLoading(false);
@@ -117,96 +119,35 @@ export default function RoutineDetailSheet() {
     return () => {
       cancelled = true;
     };
-  }, [id, today]);
+  }, [id, since]);
 
-  const todayLog = useMemo(
-    () => logs.find((log) => log.log_date === today) ?? null,
-    [logs, today],
-  );
+  const logIndex = useMemo(() => indexLogsByDate(logs), [logs]);
+  const todayLog = logIndex.get(today) ?? null;
 
-  const recent = useMemo(() => {
-    const byDate = new Map(logs.map((log) => [log.log_date, log]));
-    return Array.from({ length: 14 }, (_, index) => {
-      const date = shiftDate(today, -index);
-      return { date, log: byDate.get(date) ?? null };
-    });
-  }, [logs, today]);
-
-  function toggleDay(day: number) {
-    setDaysOfWeek((current) =>
-      current.includes(day) ? current.filter((value) => value !== day) : [...current, day].sort((a, b) => a - b),
-    );
-  }
-
-  function cancelEdit() {
-    if (routine) fill(routine);
-    setEditing(false);
-    setError(null);
-  }
-
-  function parseTime(value: string) {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    if (!/^\d{1,2}:\d{2}$/.test(trimmed)) return undefined;
-    return `${trimmed.length === 4 ? `0${trimmed}` : trimmed}:00`;
-  }
+  const stats = useMemo(() => {
+    if (!routine) return null;
+    return {
+      streak: routineStreak(routine, logIndex, today, since),
+      best: routineBestStreak(routine, logIndex, today, since),
+      rate: routineCompletionRate(routine, logIndex, today),
+      total: olderDone + logs.filter((log) => log.status === 'done').length,
+    };
+  }, [routine, logIndex, logs, olderDone, today, since]);
 
   async function saveEdits() {
-    const trimmed = title.trim();
-    if (!trimmed) {
-      setError('Pojmenuj rutinu.');
+    if (!supabase || !routine || !draft) return;
+    const result = routineDraftValues(draft);
+    if (!result.values) {
+      setError(result.error);
       return;
     }
-    if ((frequency === 'weekly' || frequency === 'custom') && daysOfWeek.length === 0) {
-      setError('Vyber aspoň jeden den.');
-      return;
-    }
-    if (!supabase || !routine) return;
-
-    const normalizedTime = parseTime(preferredTime);
-    if (normalizedTime === undefined) {
-      setError('Čas zadej jako HH:MM, třeba 21:20.');
-      return;
-    }
-
-    const days =
-      frequency === 'daily'
-        ? [...ALL_WEEKDAYS]
-        : frequency === 'weekdays'
-          ? [1, 2, 3, 4, 5]
-          : frequency === 'monthly'
-            ? null
-            : daysOfWeek;
 
     setSaving(true);
     setError(null);
-    const next: Routine = {
-      ...routine,
-      title: trimmed,
-      notes: notes.trim() || null,
-      skip_rule: skipRule.trim() || null,
-      frequency,
-      days_of_week: days,
-      duration_minutes: duration,
-      preferred_time: normalizedTime,
-      focus_area_id: focusAreaId || null,
-      goal_id: goalId || null,
-      updated_at: new Date().toISOString(),
-    };
+    const next: Routine = { ...routine, ...result.values, updated_at: new Date().toISOString() };
     const { error: updateError } = await supabase
       .from('routines')
-      .update({
-        title: next.title,
-        notes: next.notes,
-        skip_rule: next.skip_rule,
-        frequency: next.frequency,
-        days_of_week: next.days_of_week,
-        duration_minutes: next.duration_minutes,
-        preferred_time: next.preferred_time,
-        focus_area_id: next.focus_area_id,
-        goal_id: next.goal_id,
-        updated_at: next.updated_at,
-      })
+      .update({ ...result.values, updated_at: next.updated_at })
       .eq('id', routine.id);
     setSaving(false);
     if (updateError) {
@@ -216,8 +157,7 @@ export default function RoutineDetailSheet() {
     }
     haptic.success();
     setRoutine(next);
-    fill(next);
-    setEditing(false);
+    setDraft(null);
   }
 
   async function changeStatus(status: RoutineStatus) {
@@ -239,48 +179,26 @@ export default function RoutineDetailSheet() {
   }
 
   async function setTodayStatus(status: RoutineLogStatus | null, note?: string | null) {
-    if (!supabase || !routine) return;
-
-    if (status === null) {
-      if (!todayLog) return;
-      const { error: deleteError } = await supabase.from('routine_logs').delete().eq('id', todayLog.id);
-      if (deleteError) {
-        haptic.error();
-        setError(deleteError.message);
-        return;
-      }
-      setLogs((current) => current.filter((log) => log.id !== todayLog.id));
-      haptic.light();
-      return;
-    }
-
-    const payload = {
-      routine_id: routine.id,
-      log_date: today,
+    if (!routine || (status === null && !todayLog)) return;
+    const { log, error: writeError } = await writeRoutineLog({
+      routineId: routine.id,
+      date: today,
+      existing: todayLog,
       status,
-      note: note !== undefined ? note : (todayLog?.note ?? null),
-    };
-
-    const result = todayLog
-      ? await supabase
-          .from('routine_logs')
-          .update({ status: payload.status, note: payload.note })
-          .eq('id', todayLog.id)
-          .select(ROUTINE_LOG_COLUMNS)
-          .single()
-      : await supabase.from('routine_logs').insert(payload).select(ROUTINE_LOG_COLUMNS).single();
-
-    if (result.error) {
+      note,
+    });
+    if (writeError) {
       haptic.error();
-      setError(result.error.message);
+      setError(writeError);
       return;
     }
-
     setLogs((current) => {
-      const without = current.filter((log) => log.log_date !== today);
-      return result.data ? [result.data, ...without] : without;
+      const without = current.filter((item) => item.log_date !== today);
+      return log ? [log, ...without] : without;
     });
-    haptic.success();
+    setError(null);
+    if (status === null) haptic.light();
+    else haptic.success();
   }
 
   function confirmDelete() {
@@ -304,40 +222,82 @@ export default function RoutineDetailSheet() {
     );
   }
 
-  function toggleDoneToday() {
-    if (todayLog?.status === 'done') {
-      void setTodayStatus(null);
-      return;
-    }
-    setFeelingOpen(true);
-  }
-
   if (loading) {
     return (
       <View style={ui.screen}>
-        <SheetHeader title="Rutina" onCancel={() => router.back()} />
+        <SheetHeader title="Rutina" cancelLabel="Zavřít" onCancel={() => router.back()} />
         <ActivityIndicator color={colors.accent} style={styles.loader} />
       </View>
     );
   }
 
-  if (!routine) {
+  if (!routine || !stats) {
     return (
       <View style={ui.screen}>
-        <SheetHeader title="Rutina" onCancel={() => router.back()} />
+        <SheetHeader title="Rutina" cancelLabel="Zavřít" onCancel={() => router.back()} />
         <View style={ui.sheetContent}>{error ? <ErrorBanner>{error}</ErrorBanner> : null}</View>
       </View>
     );
   }
 
+  if (draft) {
+    return (
+      <View style={ui.screen}>
+        <SheetHeader
+          title="Upravit rutinu"
+          cancelLabel="Zpět"
+          onCancel={() => {
+            setDraft(null);
+            setError(null);
+          }}
+          onSave={() => {
+            void saveEdits();
+          }}
+          canSave={draft.title.trim().length > 0}
+          saving={saving}
+        />
+        <ScrollView
+          contentContainerStyle={ui.sheetContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets>
+          <RoutineForm
+            draft={draft}
+            goals={goals}
+            onChange={(patch) => setDraft((current) => (current ? { ...current, ...patch } : current))}
+          />
+          {error ? <ErrorBanner>{error}</ErrorBanner> : null}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  const active = routine.status === 'active';
   const dueToday = isRoutineDueOn(routine, today);
-  const needsWeekdays = frequency === 'weekly' || frequency === 'custom';
+  const doneToday = todayLog?.status === 'done';
+  const skippedToday = todayLog?.status === 'skipped';
+  const next = active && !dueToday ? nextRoutineDate(routine, today) : null;
+  const time = formatPreferredTime(routine.preferred_time);
+  const area = areas.find((item) => item.id === routine.focus_area_id);
+  const goal = goals.find((item) => item.id === routine.goal_id);
+  const recent = logs.slice(0, RECENT_LOGS);
+  // A broken run on a routine that has been around a while calls for a different push.
+  const mood = doneToday ? 'done' : stats.streak === 0 && routineStartDate(routine) < today ? 'comeback' : 'start';
+  const details: { icon: AppIconName; label: string; value: string }[] = [
+    ...(routine.duration_minutes
+      ? [{ icon: 'timer' as const, label: 'Délka', value: formatMinutes(routine.duration_minutes) }]
+      : []),
+    ...(time ? [{ icon: 'time' as const, label: 'Čas', value: time }] : []),
+    ...(area ? [{ icon: 'area' as const, label: 'Oblast', value: area.name }] : []),
+    ...(goal ? [{ icon: 'goal' as const, label: 'Cíl', value: goal.title }] : []),
+  ];
 
   return (
     <View style={ui.screen}>
       <RoutineFeelingSheet
         visible={feelingOpen}
         routineTitle={routine.title}
+        streak={stats.streak + 1}
         onClose={() => setFeelingOpen(false)}
         onSave={(note) => {
           setFeelingOpen(false);
@@ -345,254 +305,235 @@ export default function RoutineDetailSheet() {
         }}
       />
       <SheetHeader
-        title={editing ? 'Upravit rutinu' : 'Rutina'}
-        cancelLabel={editing ? 'Zpět' : 'Zavřít'}
-        onCancel={() => (editing ? cancelEdit() : router.back())}
-        onSave={
-          editing
-            ? () => {
-                void saveEdits();
-              }
-            : undefined
-        }
-        saveLabel="Uložit"
-        canSave={title.trim().length > 0}
-        saving={saving}
+        title="Rutina"
+        cancelLabel="Zavřít"
+        onCancel={() => router.back()}
+        saveLabel="Upravit"
+        onSave={() => {
+          haptic.light();
+          setError(null);
+          setDraft(routineToDraft(routine));
+        }}
       />
-      <ScrollView
-        contentContainerStyle={ui.sheetContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets>
-        {editing ? (
-          <>
-            <Card clip>
-              <View style={styles.titleBlock}>
-                <TextInput
-                  value={title}
-                  onChangeText={setTitle}
-                  placeholder="Název"
-                  placeholderTextColor={colors.muted}
-                  style={[ui.input, styles.titleInput]}
-                />
-                <TextInput
-                  value={notes}
-                  onChangeText={setNotes}
-                  placeholder="Poznámka"
-                  placeholderTextColor={colors.muted}
-                  style={[ui.input, styles.notesInput]}
-                  multiline
-                />
+      <ScrollView contentContainerStyle={ui.sheetContent}>
+        <View style={styles.hero}>
+          <View style={styles.heroTop}>
+            <Text style={styles.eyebrow} numberOfLines={1}>
+              {routineScheduleLabel(routine)}
+            </Text>
+            {active ? null : (
+              <View style={styles.statusPill}>
+                <Text style={styles.statusPillText}>{ROUTINE_STATUS_LABELS[routine.status]}</Text>
               </View>
-            </Card>
+            )}
+          </View>
+          <Text style={styles.title} selectable>
+            {routine.title}
+          </Text>
+          {routine.notes ? (
+            <Text style={styles.notes} selectable>
+              {routine.notes}
+            </Text>
+          ) : null}
 
-            <ChoiceGroup
-              label="Jak často"
-              value={frequency}
-              options={ROUTINE_FREQUENCIES.map((value) => ({
-                value,
-                label: ROUTINE_FREQUENCY_LABELS[value],
-                color: colors.routine,
-              }))}
-              onChange={setFrequency}
-            />
+          <View style={styles.stats}>
+            <Stat value={String(stats.streak)} label="Série" flame={stats.streak > 0} />
+            <View style={styles.statRule} />
+            <Stat value={String(stats.best)} label="Rekord" />
+            <View style={styles.statRule} />
+            <Stat value={stats.rate === null ? '—' : `${Math.round(stats.rate * 100)} %`} label="30 dní" />
+            <View style={styles.statRule} />
+            <Stat value={String(stats.total)} label="Celkem" />
+          </View>
 
-            {needsWeekdays ? (
-              <View style={styles.daysBlock}>
-                <Text style={styles.groupLabel}>Dny v týdnu</Text>
-                <View style={styles.days}>
-                  {ALL_WEEKDAYS.map((day) => {
-                    const selected = daysOfWeek.includes(day);
-                    return (
-                      <Pressable
-                        key={day}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected }}
-                        onPress={() => {
-                          haptic.tap();
-                          toggleDay(day);
-                        }}
-                        style={[styles.dayChip, selected && styles.dayChipSelected]}>
-                        <Text style={[styles.dayChipText, selected && styles.dayChipTextSelected]}>
-                          {WEEKDAY_LABELS[day]}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+          {active && dueToday ? (
+            <View style={styles.actions}>
+              {doneToday ? (
+                <View style={[styles.cta, styles.ctaDone]} accessible accessibilityLabel="Dnes splněno">
+                  <SymbolIcon name="checkmark" color={colors.inkText} size={16} weight="bold" />
+                  <Text style={[styles.ctaText, styles.ctaTextDone]}>Dnes splněno</Text>
                 </View>
-              </View>
-            ) : null}
-
-            <View style={styles.group}>
-              <Text style={styles.groupLabel}>Odhad času</Text>
-              <EffortPicker value={duration} onChange={setDuration} />
+              ) : (
+                <PressableScale
+                  accessibilityRole="button"
+                  accessibilityLabel="Hotovo dnes"
+                  onPress={() => {
+                    haptic.light();
+                    setFeelingOpen(true);
+                  }}
+                  pressedScale={0.98}
+                  style={styles.cta}>
+                  <SymbolIcon name="checkmark" color={colors.ink} size={16} weight="bold" />
+                  <Text style={styles.ctaText}>Hotovo dnes</Text>
+                </PressableScale>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={10}
+                onPress={() => {
+                  void setTodayStatus(doneToday || skippedToday ? null : 'skipped');
+                }}
+                style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}>
+                <Text style={styles.secondaryText}>
+                  {doneToday ? 'Vrátit zpět' : skippedToday ? 'Přeskočeno · zrušit' : 'Přeskočit dnes'}
+                </Text>
+              </Pressable>
             </View>
-
-            <Card clip>
-              <Row>
-                <Text style={ui.fieldLabel}>Preferovaný čas</Text>
-                <TextInput
-                  value={preferredTime}
-                  onChangeText={setPreferredTime}
-                  placeholder="21:20"
-                  placeholderTextColor={colors.muted}
-                  keyboardType="numbers-and-punctuation"
-                  style={[ui.input, styles.timeInput]}
-                />
-              </Row>
-              <Row last>
-                <Text style={ui.fieldLabel}>Kdy vynechat</Text>
-                <TextInput
-                  value={skipRule}
-                  onChangeText={setSkipRule}
-                  placeholder="Volitelné"
-                  placeholderTextColor={colors.muted}
-                  style={[ui.input, styles.skipInput]}
-                />
-              </Row>
-            </Card>
-
-            {areas.length > 0 ? (
-              <ChoiceGroup
-                label="Oblast"
-                value={focusAreaId}
-                options={[
-                  { value: '', label: 'Bez oblasti' },
-                  ...areas.map((area) => ({
-                    value: area.id,
-                    label: area.name,
-                    color: area.color?.startsWith('#') ? area.color : colors.routine,
-                  })),
-                ]}
-                onChange={setFocusAreaId}
-              />
-            ) : null}
-
-            {goals.length > 0 ? (
-              <ChoiceGroup
-                label="Vázané na cíl"
-                value={goalId}
-                options={[
-                  { value: '', label: 'Bez cíle' },
-                  ...goals.map((goal) => ({ value: goal.id, label: goal.title, color: colors.goal })),
-                ]}
-                onChange={setGoalId}
-              />
-            ) : null}
-          </>
-        ) : (
-          <>
-            <Card style={styles.summary}>
-              <View style={styles.summaryTop}>
-                <View style={ui.flex}>
-                  <Text style={styles.summaryTitle}>{routine.title}</Text>
-                  <Caption>{routineScheduleLabel(routine)}</Caption>
-                </View>
-                <Pill
-                  label={ROUTINE_STATUS_LABELS[routine.status]}
-                  color={
-                    routine.status === 'active'
-                      ? colors.routine
-                      : routine.status === 'paused'
-                        ? palette.orange
-                        : palette.gray
-                  }
-                />
-              </View>
-              {routine.notes ? <Text style={styles.notes}>{routine.notes}</Text> : null}
-              <View style={styles.metaRow}>
-                {routine.duration_minutes ? (
-                  <Pill label={formatMinutes(routine.duration_minutes)} color={colors.routine} />
-                ) : null}
-                {formatPreferredTime(routine.preferred_time) ? (
-                  <Pill label={formatPreferredTime(routine.preferred_time)!} color={palette.indigo} />
-                ) : null}
-              </View>
-              {routine.skip_rule ? <Caption>Vynechat: {routine.skip_rule}</Caption> : null}
-            </Card>
-
-            {routine.status === 'active' && dueToday ? (
-              <View style={styles.todayActions}>
-                <PrimaryButton
-                  title={todayLog?.status === 'done' ? 'Zrušit dnešní hotovo' : 'Označit dnešek'}
-                  color={todayLog?.status === 'done' ? palette.green : colors.routine}
-                  onPress={toggleDoneToday}
-                />
-                <View style={styles.todayAlt}>
-                  <TextButton
-                    title={todayLog?.status === 'skipped' ? 'Zrušit přeskočení' : 'Přeskočit'}
-                    onPress={() => {
-                      void setTodayStatus(todayLog?.status === 'skipped' ? null : 'skipped');
-                    }}
-                  />
-                  {todayLog && todayLog.status !== 'done' && todayLog.status !== 'skipped' ? (
-                    <Caption>Dnes: {ROUTINE_LOG_STATUS_LABELS[todayLog.status]}</Caption>
-                  ) : null}
-                </View>
-              </View>
-            ) : null}
-
-            <Card clip>
-              <SectionLabel title="Posledních 14 dní" />
-              {recent.map(({ date, log }, index) => (
-                <Row key={date} last={index === recent.length - 1}>
-                  <View style={ui.flex}>
-                    <Text style={styles.historyDate}>{formatJournalDate(date)}</Text>
-                    {log?.note ? (
-                      <Caption numberOfLines={2} style={styles.historyNote}>
-                        {log.note}
-                      </Caption>
-                    ) : null}
-                  </View>
-                  {log ? (
-                    <Pill
-                      label={ROUTINE_LOG_STATUS_LABELS[log.status]}
-                      color={
-                        log.status === 'done'
-                          ? palette.green
-                          : log.status === 'skipped'
-                            ? palette.orange
-                            : palette.gray
-                      }
-                    />
-                  ) : (
-                    <Text style={styles.historyEmpty}>—</Text>
-                  )}
-                </Row>
-              ))}
-            </Card>
-
-            <TextButton title="Upravit" onPress={() => setEditing(true)} />
-
-            <ChoiceGroup
-              label="Stav"
-              value={routine.status}
-              options={ROUTINE_STATUSES.map((value) => ({
-                value,
-                label: ROUTINE_STATUS_LABELS[value],
-                color:
-                  value === 'active' ? colors.routine : value === 'paused' ? palette.orange : palette.gray,
-              }))}
-              onChange={(status) => {
-                void changeStatus(status);
-              }}
-            />
-
-            <TextButton title="Smazat rutinu" color={colors.danger} onPress={confirmDelete} />
-          </>
-        )}
+          ) : next ? (
+            <Text style={styles.heroNote}>
+              Dnes volno. Další termín:{' '}
+              {daysUntil(next) === 1 ? 'zítra' : formatJournalDate(next).toLocaleLowerCase('cs-CZ')}.
+            </Text>
+          ) : null}
+        </View>
 
         {error ? <ErrorBanner>{error}</ErrorBanner> : null}
+
+        {active ? (
+          <Card style={styles.block}>
+            <QuoteBlock mood={mood} seed={`${today}:${routine.id}`} />
+          </Card>
+        ) : null}
+
+        <Card style={styles.block}>
+          <Eyebrow>Posledních 15 týdnů</Eyebrow>
+          <Heatmap routine={routine} logs={logIndex} today={today} />
+        </Card>
+
+        {details.length > 0 || routine.skip_rule ? (
+          <Card clip>
+            {details.map((detail, index) => (
+              <Row
+                key={detail.label}
+                last={index === details.length - 1 && !routine.skip_rule}
+                inset={58}>
+                <TintIcon name={detail.icon} color={colors.routine} size={30} />
+                <Text style={styles.detailLabel}>{detail.label}</Text>
+                <Text style={styles.detailValue} numberOfLines={2} selectable>
+                  {detail.value}
+                </Text>
+              </Row>
+            ))}
+            {routine.skip_rule ? (
+              // The rule is the user's own sentence, so it gets room to be read in full.
+              <View style={styles.rule}>
+                <TintIcon name="skip" color={colors.routine} size={30} />
+                <View style={ui.flex}>
+                  <Text style={styles.ruleLabel}>Kdy vynechat</Text>
+                  <Text style={styles.ruleText} selectable>
+                    {routine.skip_rule}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+          </Card>
+        ) : null}
+
+        <Card clip>
+          <View style={styles.blockHead}>
+            <Eyebrow>Poslední zápisy</Eyebrow>
+          </View>
+          {recent.length === 0 ? (
+            <Caption style={styles.empty}>Zatím žádný zápis. První den je ten nejtěžší.</Caption>
+          ) : (
+            recent.map((log, index) => (
+              <Row key={log.id} last={index === recent.length - 1}>
+                <View style={ui.flex}>
+                  <Text style={styles.logDate}>{formatJournalDate(log.log_date)}</Text>
+                  {log.note ? (
+                    <Caption numberOfLines={3} style={styles.logNote} selectable>
+                      {log.note}
+                    </Caption>
+                  ) : null}
+                </View>
+                <View>
+                  <Pill label={ROUTINE_LOG_STATUS_LABELS[log.status]} color={LOG_COLORS[log.status]} />
+                </View>
+              </Row>
+            ))
+          )}
+        </Card>
+
+        <Card clip>
+          {active ? (
+            <ManageRow
+              icon="pause"
+              color={palette.orange}
+              title="Pozastavit"
+              disabled={saving}
+              onPress={() => {
+                void changeStatus('paused');
+              }}
+            />
+          ) : (
+            <ManageRow
+              icon="play"
+              color={colors.routine}
+              title="Obnovit"
+              disabled={saving}
+              onPress={() => {
+                void changeStatus('active');
+              }}
+            />
+          )}
+          {routine.status === 'ended' ? null : (
+            <ManageRow
+              icon="stop"
+              color={palette.gray}
+              title="Ukončit"
+              disabled={saving}
+              onPress={() => {
+                void changeStatus('ended');
+              }}
+            />
+          )}
+          <ManageRow icon="trash" color={colors.danger} title="Smazat rutinu" destructive last onPress={confirmDelete} />
+        </Card>
       </ScrollView>
     </View>
   );
 }
 
-function SectionLabel({ title }: { title: string }) {
+function Stat({ value, label, flame }: { value: string; label: string; flame?: boolean }) {
   return (
-    <View style={styles.sectionLabel}>
-      <Text style={styles.groupLabel}>{title}</Text>
+    <View style={styles.stat} accessible accessibilityLabel={`${label} ${value}`}>
+      <View style={styles.statValueRow}>
+        {flame ? <SymbolIcon name="flame" color={onInk.orange} size={15} /> : null}
+        <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+          {value}
+        </Text>
+      </View>
+      <Text style={styles.statLabel} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
+  );
+}
+
+function ManageRow({
+  icon,
+  color,
+  title,
+  destructive,
+  disabled,
+  last,
+  onPress,
+}: {
+  icon: AppIconName;
+  color: string;
+  title: string;
+  destructive?: boolean;
+  disabled?: boolean;
+  last?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Row last={last} inset={58} onPress={disabled ? undefined : onPress} accessibilityLabel={title}>
+      <TintIcon name={icon} color={color} size={30} />
+      <Text style={[styles.manageTitle, destructive && { color: colors.danger }, disabled && styles.pressed]}>
+        {title}
+      </Text>
+    </Row>
   );
 }
 
@@ -600,111 +541,187 @@ const styles = StyleSheet.create({
   loader: {
     marginTop: 48,
   },
-  titleBlock: {
-    padding: 16,
-    gap: 12,
-  },
-  titleInput: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  notesInput: {
-    minHeight: 56,
-    textAlignVertical: 'top',
-    color: colors.secondary,
-  },
-  group: {
-    gap: 8,
-  },
-  groupLabel: {
-    color: colors.secondary,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    paddingHorizontal: 4,
-  },
-  daysBlock: {
+  hero: {
+    backgroundColor: colors.ink,
+    borderRadius: 26,
+    borderCurve: 'continuous',
+    padding: 20,
     gap: 10,
   },
-  days: {
+  heroTop: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  dayChip: {
-    minWidth: 42,
-    height: 36,
-    paddingHorizontal: 10,
-    borderRadius: 18,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.fill,
+    gap: 12,
+    minHeight: 22,
   },
-  dayChipSelected: {
-    backgroundColor: colors.routine,
+  eyebrow: {
+    flex: 1,
+    color: onInk.teal,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
-  dayChipText: {
-    color: colors.text,
-    fontSize: 14,
+  statusPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    backgroundColor: colors.inkFill,
+  },
+  statusPillText: {
+    color: colors.inkText,
+    fontSize: 12,
     fontWeight: '600',
   },
-  dayChipTextSelected: {
-    color: '#FFFFFF',
-  },
-  timeInput: {
-    flex: 1,
-    textAlign: 'right',
-  },
-  skipInput: {
-    flex: 1,
-    textAlign: 'right',
-  },
-  todayActions: {
-    gap: 8,
-  },
-  todayAlt: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  summary: {
-    padding: 16,
-    gap: 12,
-  },
-  summaryTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  summaryTitle: {
-    color: colors.text,
-    fontSize: 24,
+  title: {
+    color: colors.inkText,
+    fontSize: 28,
+    lineHeight: 34,
     fontWeight: '700',
   },
   notes: {
-    color: colors.secondary,
-    fontSize: 15,
+    color: colors.inkSecondary,
+    fontSize: 16,
     lineHeight: 22,
   },
-  metaRow: {
+  stats: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  sectionLabel: {
-    paddingTop: 14,
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 16,
     paddingBottom: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: onInk.separator,
+  },
+  stat: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 4,
+  },
+  statRule: {
+    width: StyleSheet.hairlineWidth,
+    height: 28,
+    backgroundColor: onInk.separator,
+  },
+  statValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statValue: {
+    color: colors.inkText,
+    fontFamily: ROUNDED,
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  statLabel: {
+    color: colors.inkSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  actions: {
+    gap: 6,
+    marginTop: 8,
+  },
+  cta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 52,
+    borderRadius: 26,
+    backgroundColor: colors.inkText,
+  },
+  ctaDone: {
+    backgroundColor: onInk.green,
+  },
+  ctaText: {
+    color: colors.ink,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  ctaTextDone: {
+    color: colors.inkText,
+  },
+  secondary: {
+    alignSelf: 'center',
+    minHeight: 36,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
+  secondaryText: {
+    color: colors.inkSecondary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  heroNote: {
+    color: colors.inkSecondary,
+    fontSize: 15,
+    lineHeight: 20,
+    marginTop: 6,
+  },
+  pressed: {
+    opacity: 0.5,
+  },
+  block: {
+    padding: 16,
+    gap: 14,
+  },
+  blockHead: {
+    paddingTop: 16,
+    paddingBottom: 2,
     paddingHorizontal: 16,
   },
-  historyDate: {
-    color: colors.text,
-    fontSize: 15,
+  empty: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
-  historyNote: {
+  detailLabel: {
+    color: colors.text,
+    fontSize: 17,
+  },
+  detailValue: {
+    flex: 1,
+    color: colors.secondary,
+    fontSize: 17,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+  rule: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  ruleLabel: {
+    color: colors.secondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  ruleText: {
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  logDate: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  logNote: {
     marginTop: 2,
   },
-  historyEmpty: {
-    color: colors.tertiary,
-    fontSize: 15,
+  manageTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 17,
   },
 });

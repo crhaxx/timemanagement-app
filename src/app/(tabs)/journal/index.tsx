@@ -17,6 +17,7 @@ import {
   Caption,
   ErrorBanner,
   Pill,
+  PressableScale,
   PrimaryButton,
   Row,
   SectionHeader,
@@ -155,17 +156,28 @@ export default function JournalScreen() {
           <ActivityIndicator color={colors.accent} style={styles.loader} />
         ) : (
           <>
-            <Card onPress={() => openEditor(selectedDate)} style={styles.dayCard} accessibilityLabel="Zápis dne">
-              <View style={styles.dayCardHead}>
-                <View style={ui.flex}>
-                  <Text style={ui.title}>{formatJournalDate(selectedDate)}</Text>
-                  <Caption>{selectedDate === today ? 'Dnes' : 'Zápis dne'}</Caption>
+            <Card style={styles.dayCard}>
+              <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="Zápis dne"
+                onPress={() => openEditor(selectedDate)}
+                pressedScale={0.985}
+                style={styles.dayCardPressable}>
+                <View style={styles.dayCardHead}>
+                  <View style={ui.flex}>
+                    <Text style={ui.title}>{formatJournalDate(selectedDate)}</Text>
+                    <Caption>{selectedDate === today ? 'Dnes' : 'Zápis dne'}</Caption>
+                  </View>
+                  {streak > 0 ? (
+                    <Pill
+                      label={`${streak} ${streak === 1 ? 'den' : streak < 5 ? 'dny' : 'dní'} v řadě`}
+                      color={palette.orange}
+                    />
+                  ) : null}
                 </View>
-                {streak > 0 ? <Pill label={`${streak} ${streak === 1 ? 'den' : streak < 5 ? 'dny' : 'dní'} v řadě`} color={palette.orange} /> : null}
-              </View>
-              {selected ? (
-                <Text style={styles.entryText}>{selected.summary}</Text>
-              ) : (
+                {selected ? <Text style={styles.entryText}>{selected.summary}</Text> : null}
+              </PressableScale>
+              {selected ? null : (
                 <View style={styles.emptyDay}>
                   <Caption>
                     {selectedDate === today
@@ -255,6 +267,9 @@ const styles = StyleSheet.create({
   },
   dayCard: {
     padding: 18,
+    gap: 14,
+  },
+  dayCardPressable: {
     gap: 14,
   },
   dayCardHead: {

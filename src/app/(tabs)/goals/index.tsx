@@ -17,6 +17,7 @@ import {
   EmptyState,
   ErrorBanner,
   Pill,
+  PressableScale,
   ProgressBar,
   Row,
   SectionHeader,
@@ -161,8 +162,13 @@ function GoalCard({ goal, subgoals }: { goal: Goal; subgoals: Goal[] }) {
   const overdue = goal.deadline ? goal.deadline < localDateISO() : false;
 
   return (
-    <Card clip onPress={() => openGoal(goal)} accessibilityLabel={goal.title}>
-      <View style={styles.cardBody}>
+    <Card clip>
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel={goal.title}
+        onPress={() => openGoal(goal)}
+        pressedScale={0.985}
+        style={styles.cardBody}>
         <View style={styles.top}>
           <TintIcon name="goal" color={colors.goal} />
           <View style={ui.flex}>
@@ -190,7 +196,7 @@ function GoalCard({ goal, subgoals }: { goal: Goal; subgoals: Goal[] }) {
         ) : goal.description ? (
           <Caption numberOfLines={3}>{goal.description}</Caption>
         ) : null}
-      </View>
+      </PressableScale>
 
       {subgoals.map((sub) => {
         const subProgress = goalProgress(sub);

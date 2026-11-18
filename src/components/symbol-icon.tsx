@@ -26,6 +26,16 @@ const ICONS = {
   trash: { ios: 'trash', android: 'delete', ion: 'trash-outline' },
   bell: { ios: 'bell.fill', android: 'notifications', ion: 'notifications' },
   settings: { ios: 'gearshape.fill', android: 'settings', ion: 'settings-outline' },
+  pause: { ios: 'pause.fill', android: 'pause', ion: 'pause' },
+  play: { ios: 'play.fill', android: 'play_arrow', ion: 'play' },
+  stop: { ios: 'stop.fill', android: 'stop', ion: 'stop' },
+  skip: { ios: 'forward.end.fill', android: 'skip_next', ion: 'play-skip-forward' },
+  undo: { ios: 'arrow.uturn.backward', android: 'undo', ion: 'arrow-undo' },
+  refresh: { ios: 'arrow.clockwise', android: 'refresh', ion: 'refresh' },
+  trophy: { ios: 'trophy.fill', android: 'trophy', ion: 'trophy' },
+  minus: { ios: 'minus', android: 'remove', ion: 'remove' },
+  timer: { ios: 'timer', android: 'timer', ion: 'timer' },
+  area: { ios: 'square.grid.2x2.fill', android: 'category', ion: 'grid' },
 } as const;
 
 export type AppIconName = keyof typeof ICONS;
