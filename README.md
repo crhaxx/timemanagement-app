@@ -1,56 +1,50 @@
-# Welcome to your Expo app 👋
+# Brain dump
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Osobní time management: rychlý zápisník úkolů, backlog a přehled. Expo (SDK 58) + TypeScript, Expo Router a Supabase.
 
-## Get started
+## Struktura
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```text
+src/app/_layout.tsx          Kořenový Stack
+src/app/(tabs)/_layout.tsx   Spodní lišta
+src/app/(tabs)/index.tsx     Přehled
+src/app/(tabs)/capture.tsx   Brain dump a backlog
+src/lib/supabase.ts          Supabase klient z EXPO_PUBLIC_* proměnných
+src/types/database.ts        Typy tabulky tasks
+src/constants/colors.ts      Paleta tmavého režimu
+supabase/schema.sql          Tabulka tasks, index a RLS politiky
+.env.example                 Vzor proměnných
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+Routy žijí v `src/app/`, protože tak je nastavená výchozí šablona Expo SDK 58 (`@/*` míří do `src/*`).
 
-### Other setup steps
+## Nastavení
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+1. V Supabase SQL editoru spusť `supabase/schema.sql`.
+2. V kořeni projektu zkopíruj `.env.example` na `.env` a doplň hodnoty z **Project Settings → API**:
 
-## Learn more
+```bash
+EXPO_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-or-publishable-key
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+`EXPO_PUBLIC_` je povinná předpona. Expo ji vloží do klientského kódu, takže sem patří jen veřejný klíč (legacy **anon** key, nebo novější **publishable** key). Secret / `service_role` klíč do aplikace nepatří.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+3. Nainstaluj závislosti a spusť aplikaci:
 
-## Join the community
+```bash
+npm install
+npx expo start
+```
 
-Join our community of developers creating universal apps.
+Po změně `.env` udělej v klientovi plný reload.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Chování
+
+- Záložka **Přehled** ukazuje počet otevřených úkolů, odhad času, důležité položky a rozpad podle kontextu.
+- Záložka **Přidat** je brain dump: uloží řádek se `status = 'backlog'`.
+- Seznam backlogu bere jen řádky se `status = 'backlog'`.
+- **Hotovo** nastaví `status = 'done'` a položka ze seznamu zmizí.
+- **Smazat** řádek odstraní. Potáhni seznam dolů pro obnovení ze Supabase.
+
+Politiky v `schema.sql` pouští anon klíč ke všem řádkům. Hodí se to pro osobní nástroj. Než by data neměla být veřejná pro kohokoli s tím klíčem, přidej přihlášení a politiky zúž.
