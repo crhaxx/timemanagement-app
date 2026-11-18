@@ -2,6 +2,9 @@ export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 export const TASK_STATUSES = ['backlog', 'done'] as const;
 export const GOAL_STATUSES = ['active', 'done', 'dropped'] as const;
 export const EFFORT_MINUTES = [15, 30, 60, 120] as const;
+export const ROUTINE_FREQUENCIES = ['daily', 'weekdays', 'weekly', 'monthly', 'custom'] as const;
+export const ROUTINE_STATUSES = ['active', 'paused', 'ended'] as const;
+export const ROUTINE_LOG_STATUSES = ['done', 'skipped', 'missed'] as const;
 
 /** Slug from `focus_areas`. Older tasks may still carry a slug that is no longer listed. */
 export type TaskContext = string;
@@ -9,6 +12,9 @@ export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 export type EffortMinutes = (typeof EFFORT_MINUTES)[number];
+export type RoutineFrequency = (typeof ROUTINE_FREQUENCIES)[number];
+export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];
+export type RoutineLogStatus = (typeof ROUTINE_LOG_STATUSES)[number];
 
 export type Task = {
   id: string;
@@ -83,6 +89,52 @@ export type JournalEntryInsert = {
   updated_at?: string;
 };
 
+export type Routine = {
+  id: string;
+  title: string;
+  notes: string | null;
+  focus_area_id: string | null;
+  goal_id: string | null;
+  duration_minutes: number | null;
+  frequency: RoutineFrequency;
+  days_of_week: number[] | null;
+  preferred_time: string | null;
+  skip_rule: string | null;
+  status: RoutineStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RoutineInsert = {
+  title: string;
+  notes?: string | null;
+  focus_area_id?: string | null;
+  goal_id?: string | null;
+  duration_minutes?: number | null;
+  frequency?: RoutineFrequency;
+  days_of_week?: number[] | null;
+  preferred_time?: string | null;
+  skip_rule?: string | null;
+  status?: RoutineStatus;
+  updated_at?: string;
+};
+
+export type RoutineLog = {
+  id: string;
+  routine_id: string;
+  log_date: string;
+  status: RoutineLogStatus;
+  note: string | null;
+  created_at: string;
+};
+
+export type RoutineLogInsert = {
+  routine_id: string;
+  log_date: string;
+  status?: RoutineLogStatus;
+  note?: string | null;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -108,6 +160,18 @@ export type Database = {
         Row: FocusArea;
         Insert: Partial<FocusArea>;
         Update: Partial<FocusArea>;
+        Relationships: [];
+      };
+      routines: {
+        Row: Routine;
+        Insert: RoutineInsert;
+        Update: Partial<RoutineInsert>;
+        Relationships: [];
+      };
+      routine_logs: {
+        Row: RoutineLog;
+        Insert: RoutineLogInsert;
+        Update: Partial<RoutineLogInsert>;
         Relationships: [];
       };
     };

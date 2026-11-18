@@ -35,6 +35,7 @@ export const colors = {
   goal: palette.purple,
   task: palette.blue,
   journal: palette.orange,
+  routine: palette.teal,
   /** Near-black surface for the single most important card on a screen. */
   ink: '#1C1C1E',
   inkText: '#FFFFFF',

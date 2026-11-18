@@ -15,6 +15,7 @@ export default function TabLayout() {
       <Tabs.Screen name="home" options={{ title: 'Přehled' }} />
       <Tabs.Screen name="tasks" options={{ title: 'Úkoly' }} />
       <Tabs.Screen name="goals" options={{ title: 'Cíle' }} />
+      <Tabs.Screen name="routines" options={{ title: 'Rutiny' }} />
       <Tabs.Screen name="journal" options={{ title: 'Deník' }} />
     </Tabs>
   );

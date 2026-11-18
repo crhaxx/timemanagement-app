@@ -1,5 +1,5 @@
 import { colors, palette } from '@/constants/colors';
-import type { GoalStatus, TaskPriority } from '@/types/database';
+import type { GoalStatus, RoutineFrequency, RoutineLogStatus, RoutineStatus, TaskPriority } from '@/types/database';
 
 /** Labels for contexts saved before they lived in `focus_areas`. */
 type LegacyContext = 'osobni' | 'dibsido' | 'weply' | 'nccore' | 'skola';
@@ -40,6 +40,36 @@ export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
   active: 'Aktivní',
   done: 'Splněno',
   dropped: 'Zrušeno',
+};
+
+export const ROUTINE_FREQUENCY_LABELS: Record<RoutineFrequency, string> = {
+  daily: 'Každý den',
+  weekdays: 'Pracovní dny',
+  weekly: 'Týdně',
+  monthly: 'Měsíčně',
+  custom: 'Vlastní',
+};
+
+export const ROUTINE_STATUS_LABELS: Record<RoutineStatus, string> = {
+  active: 'Aktivní',
+  paused: 'Pozastavená',
+  ended: 'Ukončená',
+};
+
+export const ROUTINE_LOG_STATUS_LABELS: Record<RoutineLogStatus, string> = {
+  done: 'Hotovo',
+  skipped: 'Přeskočeno',
+  missed: 'Vynecháno',
+};
+
+export const WEEKDAY_LABELS: Record<number, string> = {
+  1: 'Po',
+  2: 'Út',
+  3: 'St',
+  4: 'Čt',
+  5: 'Pá',
+  6: 'So',
+  7: 'Ne',
 };
 
 export function parseDecimal(value: string) {

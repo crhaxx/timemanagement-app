@@ -88,6 +88,12 @@ export function weekdayShort(iso: string) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+/** ISO weekday: 1=Monday … 7=Sunday. */
+export function isoWeekday(iso: string) {
+  const day = parseLocalDate(iso).getDay();
+  return day === 0 ? 7 : day;
+}
+
 export function dayNumber(iso: string) {
   return String(parseLocalDate(iso).getDate());
 }

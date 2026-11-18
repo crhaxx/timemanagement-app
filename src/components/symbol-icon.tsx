@@ -8,6 +8,7 @@ const ICONS = {
   journal: { ios: 'book.fill', android: 'menu_book', ion: 'book' },
   goal: { ios: 'flag.fill', android: 'flag', ion: 'flag' },
   tasks: { ios: 'checklist', android: 'checklist', ion: 'list' },
+  routine: { ios: 'arrow.triangle.2.circlepath', android: 'autorenew', ion: 'sync' },
   add: { ios: 'plus', android: 'add', ion: 'add' },
   arrowUp: { ios: 'arrow.up', android: 'arrow_upward', ion: 'arrow-up' },
   addCircle: { ios: 'plus.circle.fill', android: 'add_circle', ion: 'add-circle' },

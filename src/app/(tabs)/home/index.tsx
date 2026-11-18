@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FocusCard, type Focus } from '@/components/home/focus-card';
 import { GoalSummary } from '@/components/home/goal-summary';
+import { RoutinesTile } from '@/components/home/routines-tile';
 import { JournalTile, SectionTile } from '@/components/home/section-tiles';
 import { AddSheet } from '@/components/add-sheet';
 import { SymbolIcon } from '@/components/symbol-icon';
@@ -21,7 +22,14 @@ import {
 import { colors } from '@/constants/colors';
 import { PRIORITY_ORDER, formatMinutes } from '@/constants/labels';
 import { contextCounts, useFocusAreas } from '@/lib/focus-areas';
-import { GOAL_COLUMNS, TASK_COLUMNS, goalProgress } from '@/lib/data';
+import {
+  GOAL_COLUMNS,
+  TASK_COLUMNS,
+  ROUTINE_COLUMNS,
+  ROUTINE_LOG_COLUMNS,
+  goalProgress,
+  isRoutineDueOn,
+} from '@/lib/data';
 import {
   currentStreak,
   czechDays,
@@ -32,7 +40,7 @@ import {
 } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { supabase, supabaseConfigError } from '@/lib/supabase';
-import type { Goal, Task } from '@/types/database';
+import type { Goal, Routine, RoutineLog, Task } from '@/types/database';
 
 const QUEUE_LENGTH = 4;
 const WEEK_LENGTH = 7;
@@ -88,6 +96,8 @@ export default function HomeScreen() {
   const { areas } = useFocusAreas();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [routineLogs, setRoutineLogs] = useState<RoutineLog[]>([]);
   const [journalDates, setJournalDates] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(supabase !== null);
   const [refreshing, setRefreshing] = useState(false);
@@ -99,7 +109,7 @@ export default function HomeScreen() {
 
   const load = useCallback(async () => {
     if (!supabase) return;
-    const [backlog, journal, goalRows] = await Promise.all([
+    const [backlog, journal, goalRows, routineRows, logRows] = await Promise.all([
       supabase.from('tasks').select(TASK_COLUMNS).eq('status', 'backlog'),
       supabase
         .from('journal_entries')
@@ -107,19 +117,24 @@ export default function HomeScreen() {
         .order('entry_date', { ascending: false })
         .limit(400),
       supabase.from('goals').select(GOAL_COLUMNS).order('created_at', { ascending: true }),
+      supabase.from('routines').select(ROUTINE_COLUMNS).eq('status', 'active').order('created_at', { ascending: true }),
+      supabase.from('routine_logs').select(ROUTINE_LOG_COLUMNS).eq('log_date', today),
     ]);
-    const failure = backlog.error ?? journal.error ?? goalRows.error;
+    const failure =
+      backlog.error ?? journal.error ?? goalRows.error ?? routineRows.error ?? logRows.error;
     if (failure) {
       setError(failure.message);
     } else {
       setTasks(backlog.data ?? []);
       setJournalDates(new Set((journal.data ?? []).map((entry) => entry.entry_date)));
       setGoals(goalRows.data ?? []);
+      setRoutines(routineRows.data ?? []);
+      setRoutineLogs(logRows.data ?? []);
       setError(null);
     }
     setLoading(false);
     setRefreshing(false);
-  }, []);
+  }, [today]);
 
   useFocusEffect(
     useCallback(() => {
@@ -178,6 +193,16 @@ export default function HomeScreen() {
   );
   const streak = useMemo(() => currentStreak(journalDates, today), [journalDates, today]);
 
+  const todayRoutines = useMemo(() => {
+    const logByRoutine = new Map(routineLogs.map((log) => [log.routine_id, log]));
+    return routines
+      .filter((routine) => isRoutineDueOn(routine, today))
+      .map((routine) => ({
+        routine,
+        logStatus: logByRoutine.get(routine.id)?.status ?? null,
+      }));
+  }, [routines, routineLogs, today]);
+
   async function completeTask(task: Task) {
     if (!supabase) return false;
     const { error: updateError } = await supabase.from('tasks').update({ status: 'done' }).eq('id', task.id);
@@ -189,7 +214,49 @@ export default function HomeScreen() {
     return true;
   }
 
-  function openTab(href: '/tasks' | '/goals' | '/journal') {
+  async function toggleRoutineDone(routine: Routine) {
+    if (!supabase) return;
+    const existing = routineLogs.find((log) => log.routine_id === routine.id);
+
+    if (existing?.status === 'done') {
+      const { error: deleteError } = await supabase.from('routine_logs').delete().eq('id', existing.id);
+      if (deleteError) {
+        setError(deleteError.message);
+        return;
+      }
+      setRoutineLogs((current) => current.filter((log) => log.id !== existing.id));
+      haptic.light();
+      return;
+    }
+
+    const payload = {
+      routine_id: routine.id,
+      log_date: today,
+      status: 'done' as const,
+      note: existing?.note ?? null,
+    };
+    const result = existing
+      ? await supabase
+          .from('routine_logs')
+          .update({ status: payload.status, note: payload.note })
+          .eq('id', existing.id)
+          .select(ROUTINE_LOG_COLUMNS)
+          .single()
+      : await supabase.from('routine_logs').insert(payload).select(ROUTINE_LOG_COLUMNS).single();
+
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+
+    setRoutineLogs((current) => {
+      const without = current.filter((log) => log.routine_id !== routine.id);
+      return result.data ? [...without, result.data] : without;
+    });
+    haptic.success();
+  }
+
+  function openTab(href: '/tasks' | '/goals' | '/routines' | '/journal') {
     haptic.tap();
     router.navigate(href);
   }
@@ -220,6 +287,13 @@ export default function HomeScreen() {
             title: 'Nový cíl',
             subtitle: 'Větší věc, ke které směřuješ',
             onPress: () => router.push('/new-goal'),
+          },
+          {
+            icon: 'routine',
+            color: colors.routine,
+            title: 'Nová rutina',
+            subtitle: 'Návyk, který chceš opakovat',
+            onPress: () => router.push('/new-routine'),
           },
           {
             icon: 'journal',
@@ -324,6 +398,22 @@ export default function HomeScreen() {
                 onPress={() => openTab('/goals')}
               />
             </View>
+
+            <RoutinesTile
+              items={todayRoutines}
+              onOpen={() => openTab('/routines')}
+              onOpenRoutine={(routine) => {
+                haptic.light();
+                router.push({ pathname: '/routine/[id]', params: { id: routine.id } });
+              }}
+              onToggle={(routine) => {
+                void toggleRoutineDone(routine);
+              }}
+              onCreate={() => {
+                haptic.light();
+                router.push('/new-routine');
+              }}
+            />
 
             <JournalTile
               days={week}

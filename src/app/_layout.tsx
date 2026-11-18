@@ -60,9 +60,11 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="new-task" options={modal} />
         <Stack.Screen name="new-goal" options={modal} />
+        <Stack.Screen name="new-routine" options={modal} />
         <Stack.Screen name="add-step" options={{ ...modal, sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />
         <Stack.Screen name="queue" options={{ ...modal, sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />
         <Stack.Screen name="goal/[id]" options={modal} />
+        <Stack.Screen name="routine/[id]" options={modal} />
         <Stack.Screen name="journal-edit" options={modal} />
         <Stack.Screen name="settings" options={modal} />
       </Stack>

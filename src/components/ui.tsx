@@ -89,12 +89,14 @@ export function Card({
 export function Row({
   children,
   onPress,
+  onLongPress,
   last,
   inset = 16,
   accessibilityLabel,
 }: {
   children: ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
   last?: boolean;
   inset?: number;
   accessibilityLabel?: string;
@@ -103,11 +105,12 @@ export function Row({
 
   return (
     <View>
-      {onPress ? (
+      {onPress || onLongPress ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={accessibilityLabel}
           onPress={onPress}
+          onLongPress={onLongPress}
           style={({ pressed }) => pressed && styles.rowPressed}>
           {content}
         </Pressable>

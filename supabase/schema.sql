@@ -155,3 +155,64 @@ create policy "goals_delete"
 
 alter table public.tasks
   add column if not exists goal_id uuid references public.goals(id) on delete set null;
+
+-- Recurring habits. `days_of_week` uses ISO weekdays 1=Mon … 7=Sun for weekly/custom,
+-- or day-of-month 1–31 for monthly. `preferred_time` is local wall-clock time.
+create table if not exists public.routines (
+  id uuid primary key default gen_random_uuid(),
+  title text not null check (char_length(btrim(title)) > 0),
+  notes text,
+  focus_area_id uuid references public.focus_areas(id) on delete set null,
+  goal_id uuid references public.goals(id) on delete set null,
+  duration_minutes integer check (duration_minutes > 0),
+  frequency text not null default 'daily'
+    check (frequency in ('daily', 'weekdays', 'weekly', 'monthly', 'custom')),
+  days_of_week smallint[],
+  preferred_time time,
+  skip_rule text,
+  status text not null default 'active' check (status in ('active', 'paused', 'ended')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists routines_status_created_at_idx
+  on public.routines (status, created_at desc);
+
+alter table public.routines enable row level security;
+
+grant select, insert, update, delete on public.routines to anon, authenticated;
+
+drop policy if exists "routines_all" on public.routines;
+
+create policy "routines_all"
+  on public.routines
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+create table if not exists public.routine_logs (
+  id uuid primary key default gen_random_uuid(),
+  routine_id uuid not null references public.routines(id) on delete cascade,
+  log_date date not null,
+  status text not null default 'done' check (status in ('done', 'skipped', 'missed')),
+  note text,
+  created_at timestamptz not null default now(),
+  unique (routine_id, log_date)
+);
+
+create index if not exists routine_logs_log_date_idx
+  on public.routine_logs (log_date desc);
+
+alter table public.routine_logs enable row level security;
+
+grant select, insert, update, delete on public.routine_logs to anon, authenticated;
+
+drop policy if exists "routine_logs_all" on public.routine_logs;
+
+create policy "routine_logs_all"
+  on public.routine_logs
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);

@@ -18,6 +18,7 @@ const TABS: Record<string, { label: string; icon: AppIconName }> = {
   home: { label: 'Přehled', icon: 'home' },
   tasks: { label: 'Úkoly', icon: 'tasks' },
   goals: { label: 'Cíle', icon: 'goal' },
+  routines: { label: 'Rutiny', icon: 'routine' },
   journal: { label: 'Deník', icon: 'journal' },
 };
 

@@ -1,4 +1,4 @@
-import { ActionSheetIOS, Alert, Platform } from 'react-native';
+import { Alert } from 'react-native';
 
 export type SheetAction = {
   label: string;
@@ -6,21 +6,11 @@ export type SheetAction = {
   onPress: () => void;
 };
 
-/** Native action sheet on iOS, plain alert elsewhere. */
+/**
+ * Action picker via Alert so it works above Expo Router modals.
+ * ActionSheetIOS often fails to appear from a presented sheet.
+ */
 export function showActions(title: string, actions: SheetAction[]) {
-  if (Platform.OS === 'ios') {
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title,
-        options: [...actions.map((action) => action.label), 'Zrušit'],
-        cancelButtonIndex: actions.length,
-        destructiveButtonIndex: actions.findIndex((action) => action.destructive),
-      },
-      (index) => actions[index]?.onPress(),
-    );
-    return;
-  }
-
   Alert.alert(title, undefined, [
     ...actions.map((action) => ({
       text: action.label,
