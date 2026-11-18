@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Checkbox, Row } from '@/components/ui';
+import { Checkbox, Pill, Row } from '@/components/ui';
 import { colors } from '@/constants/colors';
-import { CONTEXT_COLORS, CONTEXT_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, formatMinutes } from '@/constants/labels';
+import { PRIORITY_COLORS, PRIORITY_LABELS, formatMinutes } from '@/constants/labels';
+import { contextMeta, useFocusAreas } from '@/lib/focus-areas';
+import { daysUntil, formatTaskWhen } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Task } from '@/types/database';
 
@@ -12,15 +14,18 @@ export function TaskRow({
   goalTitle,
   last,
   onComplete,
+  onReopen,
   onPress,
 }: {
   task: Task;
   goalTitle?: string;
   last: boolean;
   onComplete: () => void;
+  onReopen?: () => void;
   onPress?: () => void;
 }) {
-  const [checked, setChecked] = useState(false);
+  const done = task.status === 'done';
+  const [checked, setChecked] = useState(done);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -30,21 +35,35 @@ export function TaskRow({
     [],
   );
 
-  function complete() {
-    if (checked) return;
+  function toggle() {
+    if (timer.current) return;
+    if (checked) {
+      if (!onReopen) return;
+      setChecked(false);
+      haptic.light();
+      timer.current = setTimeout(onReopen, 380);
+      return;
+    }
     setChecked(true);
     haptic.success();
     timer.current = setTimeout(onComplete, 380);
   }
 
+  const { areas } = useFocusAreas();
+  const context = contextMeta(task.context, areas);
+  const overdue = !done && !!task.deadline && daysUntil(task.deadline.slice(0, 10)) < 0;
+  const important = task.priority === 'urgent' || task.priority === 'high';
+
   return (
     <Row last={last} inset={54} onPress={onPress} accessibilityLabel={task.title}>
-      <Checkbox
-        checked={checked}
-        onPress={complete}
-        color={PRIORITY_COLORS[task.priority]}
-        label={`Dokončit ${task.title}`}
-      />
+      <View style={styles.checkWrap}>
+        <Checkbox
+          checked={checked}
+          onPress={toggle}
+          color={done ? colors.success : PRIORITY_COLORS[task.priority]}
+          label={done ? `Vrátit ${task.title}` : `Dokončit ${task.title}`}
+        />
+      </View>
       <View style={styles.body}>
         <Text style={[styles.title, checked && styles.titleDone]} numberOfLines={2}>
           {task.title}
@@ -54,29 +73,42 @@ export function TaskRow({
             {task.notes}
           </Text>
         ) : null}
-        <Text style={styles.meta} numberOfLines={1}>
-          <Text style={{ color: CONTEXT_COLORS[task.context], fontWeight: '600' }}>
-            {CONTEXT_LABELS[task.context]}
+        <View style={styles.meta}>
+          <Pill label={context.label} color={context.color} />
+          <Pill label={formatMinutes(task.effort_minutes)} color={colors.muted} />
+          {task.deadline ? (
+            <Pill
+              label={formatTaskWhen(task.deadline)}
+              color={overdue ? colors.danger : colors.muted}
+            />
+          ) : null}
+          {important && !done ? (
+            <Pill label={PRIORITY_LABELS[task.priority]} color={PRIORITY_COLORS[task.priority]} />
+          ) : null}
+        </View>
+        {goalTitle ? (
+          <Text style={styles.goal} numberOfLines={1}>
+            {goalTitle}
           </Text>
-          {` · ${formatMinutes(task.effort_minutes)}`}
-          {task.priority === 'urgent' || task.priority === 'high'
-            ? ` · ${PRIORITY_LABELS[task.priority]}`
-            : ''}
-          {goalTitle ? ` · ${goalTitle}` : ''}
-        </Text>
+        ) : null}
       </View>
     </Row>
   );
 }
 
 const styles = StyleSheet.create({
+  checkWrap: {
+    alignSelf: 'flex-start',
+    paddingTop: 1,
+  },
   body: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   title: {
     color: colors.text,
     fontSize: 17,
+    fontWeight: '500',
     lineHeight: 22,
   },
   titleDone: {
@@ -88,8 +120,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   meta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 5,
+  },
+  goal: {
     color: colors.secondary,
     fontSize: 13,
-    marginTop: 2,
+    marginTop: 4,
   },
 });

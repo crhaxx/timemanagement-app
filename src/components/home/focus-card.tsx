@@ -4,7 +4,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SymbolIcon, type AppIconName } from '@/components/symbol-icon';
 import { PressableScale } from '@/components/ui';
 import { colors } from '@/constants/colors';
-import { CONTEXT_LABELS, formatMinutes } from '@/constants/labels';
+import { formatMinutes } from '@/constants/labels';
+import { contextMeta, useFocusAreas } from '@/lib/focus-areas';
 import { formatDeadlineLabel } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Goal, Task } from '@/types/database';
@@ -117,6 +118,7 @@ function NextTask({
   goal: Goal | null;
   onComplete: (task: Task) => Promise<boolean>;
 }) {
+  const { areas } = useFocusAreas();
   const [done, setDone] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -166,7 +168,7 @@ function NextTask({
       <View style={styles.footer}>
         <PillButton icon="checkmark" title="Hotovo" onPress={complete} done={done} />
         <Text style={styles.meta} numberOfLines={1}>
-          {formatMinutes(task.effort_minutes)} · {CONTEXT_LABELS[task.context]}
+          {formatMinutes(task.effort_minutes)} · {contextMeta(task.context, areas).label}
         </Text>
       </View>
     </>

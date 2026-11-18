@@ -1,10 +1,10 @@
-export const TASK_CONTEXTS = ['osobni', 'dibsido', 'weply', 'nccore', 'skola'] as const;
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 export const TASK_STATUSES = ['backlog', 'done'] as const;
 export const GOAL_STATUSES = ['active', 'done', 'dropped'] as const;
 export const EFFORT_MINUTES = [15, 30, 60, 120] as const;
 
-export type TaskContext = (typeof TASK_CONTEXTS)[number];
+/** Slug from `focus_areas`. Older tasks may still carry a slug that is no longer listed. */
+export type TaskContext = string;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
@@ -60,6 +60,15 @@ export type GoalInsert = {
   updated_at?: string;
 };
 
+export type FocusArea = {
+  id: string;
+  slug: string;
+  name: string;
+  color: string | null;
+  status: string;
+  priority: number | null;
+};
+
 export type JournalEntry = {
   id: string;
   entry_date: string;
@@ -93,6 +102,12 @@ export type Database = {
         Row: Goal;
         Insert: GoalInsert;
         Update: Partial<GoalInsert>;
+        Relationships: [];
+      };
+      focus_areas: {
+        Row: FocusArea;
+        Insert: Partial<FocusArea>;
+        Update: Partial<FocusArea>;
         Relationships: [];
       };
     };

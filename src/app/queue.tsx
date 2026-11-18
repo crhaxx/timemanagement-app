@@ -6,12 +6,14 @@ import { ContextBreakdown } from '@/components/home/context-breakdown';
 import { TaskRow } from '@/components/task-row';
 import { Card, Caption, EmptyState, ErrorBanner, PrimaryButton, SheetHeader, ui } from '@/components/ui';
 import { colors } from '@/constants/colors';
-import { CONTEXT_LABELS, PRIORITY_ORDER, formatMinutes } from '@/constants/labels';
+import { PRIORITY_ORDER, formatMinutes } from '@/constants/labels';
+import { contextCounts, useFocusAreas } from '@/lib/focus-areas';
 import { GOAL_COLUMNS, TASK_COLUMNS } from '@/lib/data';
 import { supabase, supabaseConfigError } from '@/lib/supabase';
-import type { Goal, Task, TaskContext } from '@/types/database';
+import type { Goal, Task } from '@/types/database';
 
 export default function QueueSheet() {
+  const { areas } = useFocusAreas();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(supabase !== null);
@@ -44,12 +46,8 @@ export default function QueueSheet() {
     [tasks],
   );
   const byContext = useMemo(
-    () =>
-      (Object.keys(CONTEXT_LABELS) as TaskContext[])
-        .map((ctx) => ({ ctx, count: tasks.filter((task) => task.context === ctx).length }))
-        .filter((item) => item.count > 0)
-        .sort((a, b) => b.count - a.count),
-    [tasks],
+    () => contextCounts(tasks.map((task) => task.context), areas).filter((item) => item.count > 0),
+    [areas, tasks],
   );
   const titles = useMemo(() => new Map(goals.map((goal) => [goal.id, goal.title])), [goals]);
   const minutes = tasks.reduce((sum, task) => sum + task.effort_minutes, 0);

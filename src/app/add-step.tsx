@@ -1,22 +1,31 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 
-import { Card, Caption, ChoiceGroup, ErrorBanner, SheetHeader, ui } from '@/components/ui';
+import { EffortPicker } from '@/components/effort-picker';
+import { Card, Caption, ChoiceGroup, ErrorBanner, Eyebrow, SheetHeader, ui } from '@/components/ui';
 import { colors } from '@/constants/colors';
-import { CONTEXT_COLORS, CONTEXT_LABELS, formatMinutes } from '@/constants/labels';
+import { contextMeta, useFocusAreas } from '@/lib/focus-areas';
 import { haptic } from '@/lib/haptics';
 import { supabase, supabaseConfigError } from '@/lib/supabase';
-import { EFFORT_MINUTES, TASK_CONTEXTS, type EffortMinutes, type TaskContext } from '@/types/database';
 
 export default function AddStepSheet() {
   const { goalId } = useLocalSearchParams<{ goalId: string }>();
   const [goalTitle, setGoalTitle] = useState('');
   const [title, setTitle] = useState('');
-  const [context, setContext] = useState<TaskContext>('osobni');
-  const [effort, setEffort] = useState<EffortMinutes>(15);
+  const { areas, refresh } = useFocusAreas();
+  const [context, setContext] = useState('');
+  const [effort, setEffort] = useState<number | null>(15);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(supabaseConfigError);
+
+  const selectedContext = areas.some((area) => area.slug === context) ? context : (areas[0]?.slug ?? '');
+
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
 
   useEffect(() => {
     if (!supabase || !goalId) return;
@@ -36,12 +45,16 @@ export default function AddStepSheet() {
 
   async function save() {
     const trimmed = title.trim();
-    if (!trimmed || !supabase || !goalId) return;
+    if (!trimmed || !supabase || !goalId || !selectedContext) return;
+    if (!effort) {
+      setError('Napiš odhad času, třeba 45 min nebo 1 h 30 min.');
+      return;
+    }
     setSaving(true);
     setError(null);
     const { error: insertError } = await supabase.from('tasks').insert({
       title: trimmed,
-      context,
+      context: selectedContext,
       effort_minutes: effort,
       priority: 'medium',
       goal_id: goalId,
@@ -91,20 +104,17 @@ export default function AddStepSheet() {
         </Card>
         <ChoiceGroup
           label="Kontext"
-          value={context}
-          options={TASK_CONTEXTS.map((value) => ({
-            value,
-            label: CONTEXT_LABELS[value],
-            color: CONTEXT_COLORS[value],
-          }))}
+          value={selectedContext}
+          options={areas.map((area) => {
+            const meta = contextMeta(area.slug, areas);
+            return { value: area.slug, label: meta.label, color: meta.color };
+          })}
           onChange={setContext}
         />
-        <ChoiceGroup
-          label="Odhad času"
-          value={effort}
-          options={EFFORT_MINUTES.map((value) => ({ value, label: formatMinutes(value) }))}
-          onChange={setEffort}
-        />
+        <View style={{ gap: 8 }}>
+          <Eyebrow>Odhad času</Eyebrow>
+          <EffortPicker value={effort} onChange={setEffort} />
+        </View>
         {error ? <ErrorBanner>{error}</ErrorBanner> : null}
       </ScrollView>
     </View>

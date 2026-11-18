@@ -51,6 +51,28 @@ export function czechDays(count: number) {
   return `${abs} dní`;
 }
 
+/** Short label for a task's planned day: Dnes, Zítra, or a numeric date. */
+export function formatTaskWhen(iso: string) {
+  const day = iso.slice(0, 10);
+  const days = daysUntil(day);
+  if (days === 0) return 'Dnes';
+  if (days === 1) return 'Zítra';
+  if (days === -1) return 'Včera';
+  return parseLocalDate(day).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' });
+}
+
+/** Section heading for tasks planned on the same day. */
+export function formatTaskHeading(iso: string) {
+  const day = iso.slice(0, 10);
+  const days = daysUntil(day);
+  if (days === 0) return 'Dnes';
+  if (days === 1) return 'Zítra';
+  if (days === -1) return 'Včera';
+  const label = formatJournalDate(day);
+  if (days < 0) return `Po termínu · ${label}`;
+  return label;
+}
+
 export function formatDeadlineLabel(iso: string) {
   const days = daysUntil(iso);
   const date = formatDeadline(iso);

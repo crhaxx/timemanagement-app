@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FocusCard, type Focus } from '@/components/home/focus-card';
 import { GoalSummary } from '@/components/home/goal-summary';
 import { JournalTile, SectionTile } from '@/components/home/section-tiles';
+import { AddSheet } from '@/components/add-sheet';
 import { SymbolIcon } from '@/components/symbol-icon';
 import {
   Card,
@@ -18,7 +19,8 @@ import {
   ui,
 } from '@/components/ui';
 import { colors } from '@/constants/colors';
-import { CONTEXT_LABELS, PRIORITY_ORDER, formatMinutes } from '@/constants/labels';
+import { PRIORITY_ORDER, formatMinutes } from '@/constants/labels';
+import { contextCounts, useFocusAreas } from '@/lib/focus-areas';
 import { GOAL_COLUMNS, TASK_COLUMNS, goalProgress } from '@/lib/data';
 import {
   currentStreak,
@@ -28,10 +30,9 @@ import {
   localDateISO,
   shiftDate,
 } from '@/lib/dates';
-import { showActions } from '@/lib/actions';
 import { haptic } from '@/lib/haptics';
 import { supabase, supabaseConfigError } from '@/lib/supabase';
-import type { Goal, Task, TaskContext } from '@/types/database';
+import type { Goal, Task } from '@/types/database';
 
 const QUEUE_LENGTH = 4;
 const WEEK_LENGTH = 7;
@@ -84,11 +85,13 @@ function nearestDeadlineLabel(goals: Goal[]) {
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const { areas } = useFocusAreas();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [journalDates, setJournalDates] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(supabase !== null);
   const [refreshing, setRefreshing] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [stepGoalId, setStepGoalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(supabaseConfigError);
 
@@ -157,17 +160,17 @@ export default function HomeScreen() {
       activeGoals,
       queue: ordered.filter((task) => task.id !== focusTaskId).slice(0, QUEUE_LENGTH),
       totalMinutes: tasks.reduce((sum, task) => sum + task.effort_minutes, 0),
-      byContext: (Object.keys(CONTEXT_LABELS) as TaskContext[])
-        .map((ctx) => ({ ctx, count: tasks.filter((task) => task.context === ctx).length }))
-        .filter((item) => item.count > 0)
-        .sort((a, b) => b.count - a.count),
+      byContext: contextCounts(
+        tasks.map((task) => task.context),
+        areas,
+      ),
       featuredGoal:
         activeGoals.find((goal) => goal.parent_id === null && goalProgress(goal) !== null) ??
         activeGoals.find((goal) => goalProgress(goal) !== null) ??
         activeGoals[0] ??
         null,
     };
-  }, [goals, tasks, stepGoalId]);
+  }, [areas, goals, tasks, stepGoalId]);
 
   const week = useMemo(
     () => Array.from({ length: WEEK_LENGTH }, (_, index) => shiftDate(today, index - (WEEK_LENGTH - 1))),
@@ -200,6 +203,33 @@ export default function HomeScreen() {
 
   return (
     <View style={[ui.screen, { paddingTop: insets.top }]}>
+      <AddSheet
+        visible={addOpen}
+        onClose={() => setAddOpen(false)}
+        options={[
+          {
+            icon: 'tasks',
+            color: colors.task,
+            title: 'Nový úkol',
+            subtitle: 'Něco, co je potřeba udělat',
+            onPress: () => router.push('/new-task'),
+          },
+          {
+            icon: 'goal',
+            color: colors.goal,
+            title: 'Nový cíl',
+            subtitle: 'Větší věc, ke které směřuješ',
+            onPress: () => router.push('/new-goal'),
+          },
+          {
+            icon: 'journal',
+            color: colors.journal,
+            title: 'Zápis do deníku',
+            subtitle: 'Zachyť dnešek',
+            onPress: () => openJournalEditor(today),
+          },
+        ]}
+      />
       <ScrollView
         style={ui.screen}
         contentInsetAdjustmentBehavior="automatic"
@@ -230,11 +260,7 @@ export default function HomeScreen() {
             pressedScale={0.92}
             onPress={() => {
               haptic.light();
-              showActions('Přidat', [
-                { label: 'Nový úkol', onPress: () => router.push('/new-task') },
-                { label: 'Nový cíl', onPress: () => router.push('/new-goal') },
-                { label: 'Zápis do deníku', onPress: () => openJournalEditor(today) },
-              ]);
+              setAddOpen(true);
             }}
             style={styles.add}>
             <SymbolIcon name="add" color={colors.accent} size={20} weight="semibold" />

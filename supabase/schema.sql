@@ -10,7 +10,8 @@ create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   title text not null check (char_length(btrim(title)) > 0),
   notes text,
-  context text not null check (context in ('osobni', 'dibsido', 'weply', 'nccore', 'skola')),
+  -- Slug from public.focus_areas. Older rows may keep a slug that is no longer listed.
+  context text not null,
   effort_minutes integer not null check (effort_minutes > 0),
   priority text not null default 'medium' check (priority in ('low', 'medium', 'high', 'urgent')),
   status text not null default 'backlog' check (status in ('backlog', 'done')),

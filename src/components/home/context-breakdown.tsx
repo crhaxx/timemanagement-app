@@ -2,24 +2,24 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { Card, Eyebrow } from '@/components/ui';
 import { colors } from '@/constants/colors';
-import { CONTEXT_COLORS, CONTEXT_LABELS } from '@/constants/labels';
-import type { TaskContext } from '@/types/database';
+import { contextMeta, useFocusAreas } from '@/lib/focus-areas';
 
 /** One segmented bar showing where the open tasks sit, the way iOS shows storage. */
-export function ContextBreakdown({ items }: { items: { ctx: TaskContext; count: number }[] }) {
+export function ContextBreakdown({ items }: { items: { ctx: string; count: number }[] }) {
+  const { areas } = useFocusAreas();
   return (
     <Card style={styles.card}>
       <Eyebrow>Úkoly podle kontextu</Eyebrow>
       <View style={styles.bar}>
         {items.map(({ ctx, count }) => (
-          <View key={ctx} style={{ flex: count, backgroundColor: CONTEXT_COLORS[ctx] }} />
+          <View key={ctx} style={{ flex: count, backgroundColor: contextMeta(ctx, areas).color }} />
         ))}
       </View>
       <View style={styles.legend}>
         {items.map(({ ctx, count }) => (
           <View key={ctx} style={styles.legendItem}>
-            <View style={[styles.dot, { backgroundColor: CONTEXT_COLORS[ctx] }]} />
-            <Text style={styles.label}>{CONTEXT_LABELS[ctx]}</Text>
+            <View style={[styles.dot, { backgroundColor: contextMeta(ctx, areas).color }]} />
+            <Text style={styles.label}>{contextMeta(ctx, areas).label}</Text>
             <Text style={styles.count}>{count}</Text>
           </View>
         ))}

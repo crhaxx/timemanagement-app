@@ -3,6 +3,7 @@ import * as SystemUI from 'expo-system-ui';
 import { StatusBar } from 'expo-status-bar';
 
 import { colors } from '@/constants/colors';
+import { FocusAreasProvider } from '@/lib/focus-areas';
 
 void SystemUI.setBackgroundColorAsync(colors.background);
 
@@ -14,7 +15,7 @@ const modal = {
 
 export default function RootLayout() {
   return (
-    <>
+    <FocusAreasProvider>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -29,6 +30,6 @@ export default function RootLayout() {
         <Stack.Screen name="goal/[id]" options={modal} />
         <Stack.Screen name="journal-edit" options={modal} />
       </Stack>
-    </>
+    </FocusAreasProvider>
   );
 }

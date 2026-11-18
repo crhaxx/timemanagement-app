@@ -1,7 +1,10 @@
 import { colors, palette } from '@/constants/colors';
-import type { GoalStatus, TaskContext, TaskPriority } from '@/types/database';
+import type { GoalStatus, TaskPriority } from '@/types/database';
 
-export const CONTEXT_COLORS: Record<TaskContext, string> = {
+/** Labels for contexts saved before they lived in `focus_areas`. */
+type LegacyContext = 'osobni' | 'dibsido' | 'weply' | 'nccore' | 'skola';
+
+export const CONTEXT_COLORS: Record<LegacyContext, string> = {
   osobni: palette.blue,
   dibsido: palette.purple,
   weply: palette.orange,
@@ -18,7 +21,7 @@ export const PRIORITY_COLORS: Record<TaskPriority, string> = {
 
 export const PRIORITY_ORDER: Record<TaskPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
-export const CONTEXT_LABELS: Record<TaskContext, string> = {
+export const CONTEXT_LABELS: Record<LegacyContext, string> = {
   osobni: 'Osobní',
   dibsido: 'Dibsido',
   weply: 'Weply',
