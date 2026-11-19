@@ -5,7 +5,7 @@ import { CONTEXT_COLORS, CONTEXT_LABELS } from '@/constants/labels';
 import { supabase } from '@/lib/supabase';
 import type { FocusArea } from '@/types/database';
 
-export const FOCUS_AREA_COLUMNS = 'id, slug, name, color, status, priority';
+export const FOCUS_AREA_COLUMNS = 'id, slug, name, color, status, priority, weekly_target_hours';
 
 const FALLBACK_COLORS = [
   palette.blue,

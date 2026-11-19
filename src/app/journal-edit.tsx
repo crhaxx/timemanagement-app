@@ -2,12 +2,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { ErrorBanner, SheetHeader, TextButton, ui } from '@/components/ui';
+import { ChoiceGroup, ErrorBanner, SheetHeader, TextButton, ui } from '@/components/ui';
 import { colors } from '@/constants/colors';
+import { QUALITY_LABELS } from '@/constants/labels';
 import { confirmDestructive } from '@/lib/actions';
+import { JOURNAL_COLUMNS } from '@/lib/data';
 import { formatJournalDate, localDateISO } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { supabase, supabaseConfigError } from '@/lib/supabase';
+import { SCALE_1_TO_5 } from '@/types/database';
 
 export default function JournalEditSheet() {
   const params = useLocalSearchParams<{ date?: string }>();
@@ -15,7 +18,9 @@ export default function JournalEditSheet() {
 
   const [entryId, setEntryId] = useState<string | null>(null);
   const [original, setOriginal] = useState('');
+  const [originalEnergy, setOriginalEnergy] = useState<number | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  const [energy, setEnergy] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(supabaseConfigError);
 
@@ -24,7 +29,7 @@ export default function JournalEditSheet() {
     let cancelled = false;
     void supabase
       .from('journal_entries')
-      .select('id, summary')
+      .select(JOURNAL_COLUMNS)
       .eq('entry_date', date)
       .maybeSingle()
       .then(({ data, error: queryError }) => {
@@ -34,6 +39,8 @@ export default function JournalEditSheet() {
         } else if (data) {
           setEntryId(data.id);
           setOriginal(data.summary);
+          setOriginalEnergy(data.energy);
+          setEnergy(data.energy);
         }
       });
     return () => {
@@ -43,7 +50,8 @@ export default function JournalEditSheet() {
 
   const value = draft ?? original;
   const trimmed = value.trim();
-  const canSave = trimmed.length > 0 && trimmed !== original.trim();
+  const canSave =
+    trimmed.length > 0 && (trimmed !== original.trim() || energy !== originalEnergy);
 
   async function save() {
     if (!supabase) {
@@ -53,7 +61,12 @@ export default function JournalEditSheet() {
     setSaving(true);
     setError(null);
     const { error: upsertError } = await supabase.from('journal_entries').upsert(
-      { entry_date: date, summary: trimmed, updated_at: new Date().toISOString() },
+      {
+        entry_date: date,
+        summary: trimmed,
+        energy,
+        updated_at: new Date().toISOString(),
+      },
       { onConflict: 'entry_date' },
     );
     setSaving(false);
@@ -107,6 +120,16 @@ export default function JournalEditSheet() {
           multiline
           autoFocus
           textAlignVertical="top"
+        />
+        <ChoiceGroup
+          label="Energie"
+          options={SCALE_1_TO_5.map((value) => ({
+            value,
+            label: `${value} · ${QUALITY_LABELS[value]}`,
+            color: colors.journal,
+          }))}
+          value={(energy ?? 3) as (typeof SCALE_1_TO_5)[number]}
+          onChange={(next) => setEnergy(next)}
         />
         {error ? <ErrorBanner>{error}</ErrorBanner> : null}
         {entryId ? (

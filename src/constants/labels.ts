@@ -1,5 +1,14 @@
 import { colors, palette } from '@/constants/colors';
-import type { GoalStatus, RoutineFrequency, RoutineLogStatus, RoutineStatus, TaskPriority } from '@/types/database';
+import type {
+  GoalStatus,
+  InboxKind,
+  InboxStatus,
+  RoutineFrequency,
+  RoutineLogStatus,
+  RoutineStatus,
+  TaskPriority,
+  TimeSource,
+} from '@/types/database';
 
 /** Labels for contexts saved before they lived in `focus_areas`. */
 type LegacyContext = 'osobni' | 'dibsido' | 'weply' | 'nccore' | 'skola';
@@ -60,6 +69,34 @@ export const ROUTINE_LOG_STATUS_LABELS: Record<RoutineLogStatus, string> = {
   done: 'Hotovo',
   skipped: 'Přeskočeno',
   missed: 'Vynecháno',
+};
+
+export const INBOX_KIND_LABELS: Record<InboxKind, string> = {
+  idea: 'Nápad',
+  task: 'Úkol',
+  note: 'Poznámka',
+  link: 'Odkaz',
+};
+
+export const INBOX_STATUS_LABELS: Record<InboxStatus, string> = {
+  new: 'Nové',
+  converted: 'Převedeno',
+  someday: 'Někdy',
+  discarded: 'Zahozeno',
+};
+
+export const TIME_SOURCE_LABELS: Record<TimeSource, string> = {
+  manual: 'Ručně',
+  calendar: 'Kalendář',
+  estimate: 'Odhad',
+};
+
+export const QUALITY_LABELS: Record<number, string> = {
+  1: 'Špatně',
+  2: 'Slabě',
+  3: 'OK',
+  4: 'Dobře',
+  5: 'Skvěle',
 };
 
 export const WEEKDAY_LABELS: Record<number, string> = {

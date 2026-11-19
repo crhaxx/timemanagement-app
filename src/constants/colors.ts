@@ -36,6 +36,9 @@ export const colors = {
   task: palette.blue,
   journal: palette.orange,
   routine: palette.teal,
+  inbox: palette.indigo,
+  sleep: palette.indigo,
+  time: palette.green,
   /** Near-black surface for the single most important card on a screen. */
   ink: '#1C1C1E',
   inkText: '#FFFFFF',

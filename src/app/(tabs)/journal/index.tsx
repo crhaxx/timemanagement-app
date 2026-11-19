@@ -56,7 +56,7 @@ export default function JournalScreen() {
     if (!supabase) return;
     const { data, error: queryError } = await supabase
       .from('journal_entries')
-      .select('id, entry_date, summary, created_at, updated_at')
+      .select('id, entry_date, summary, energy, mood, created_at, updated_at')
       .order('entry_date', { ascending: false });
     if (queryError) {
       setError(queryError.message);

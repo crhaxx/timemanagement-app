@@ -13,6 +13,17 @@ export const ROUTINE_COLUMNS =
 
 export const ROUTINE_LOG_COLUMNS = 'id, routine_id, log_date, status, note, created_at';
 
+export const JOURNAL_COLUMNS = 'id, entry_date, summary, energy, mood, created_at, updated_at';
+
+export const INBOX_COLUMNS =
+  'id, content, kind, status, focus_area_id, converted_task_id, processed_at, created_at, updated_at';
+
+export const SLEEP_COLUMNS =
+  'id, wake_date, bedtime, wake_time, duration_minutes, quality, note, created_at, updated_at';
+
+export const TIME_ENTRY_COLUMNS =
+  'id, entry_date, start_at, end_at, duration_minutes, planned_minutes, focus_area_id, task_id, routine_id, calendar_event_id, title, source, note, created_at, updated_at';
+
 /** Whether an active routine is scheduled for the given local ISO date. */
 export function isRoutineDueOn(routine: Routine, isoDate: string) {
   return routine.status === 'active' && isRoutineScheduledOn(routine, isoDate);

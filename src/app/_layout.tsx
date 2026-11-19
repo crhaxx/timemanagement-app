@@ -63,6 +63,11 @@ export default function RootLayout() {
         <Stack.Screen name="new-routine" options={modal} />
         <Stack.Screen name="add-step" options={{ ...modal, sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />
         <Stack.Screen name="queue" options={{ ...modal, sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }} />
+        <Stack.Screen name="inbox" options={{ ...modal, sheetAllowedDetents: [0.7, 1], sheetGrabberVisible: true }} />
+        <Stack.Screen name="new-inbox" options={modal} />
+        <Stack.Screen name="sleep-log" options={modal} />
+        <Stack.Screen name="time-review" options={{ ...modal, sheetAllowedDetents: [0.7, 1], sheetGrabberVisible: true }} />
+        <Stack.Screen name="time-summary" options={{ ...modal, sheetAllowedDetents: [0.7, 1], sheetGrabberVisible: true }} />
         <Stack.Screen name="goal/[id]" options={modal} />
         <Stack.Screen name="routine/[id]" options={modal} />
         <Stack.Screen name="journal-edit" options={modal} />

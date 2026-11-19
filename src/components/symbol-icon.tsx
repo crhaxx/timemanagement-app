@@ -36,6 +36,9 @@ const ICONS = {
   minus: { ios: 'minus', android: 'remove', ion: 'remove' },
   timer: { ios: 'timer', android: 'timer', ion: 'timer' },
   area: { ios: 'square.grid.2x2.fill', android: 'category', ion: 'grid' },
+  inbox: { ios: 'tray.fill', android: 'inbox', ion: 'file-tray' },
+  moon: { ios: 'moon.fill', android: 'bedtime', ion: 'moon' },
+  bulb: { ios: 'lightbulb.fill', android: 'lightbulb', ion: 'bulb' },
 } as const;
 
 export type AppIconName = keyof typeof ICONS;

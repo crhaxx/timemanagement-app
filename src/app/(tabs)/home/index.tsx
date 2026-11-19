@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FocusCard, type Focus } from '@/components/home/focus-card';
 import { GoalSummary } from '@/components/home/goal-summary';
+import { LifePrompt, LifeTile } from '@/components/home/life-tiles';
 import { RoutinesTile } from '@/components/home/routines-tile';
 import { JournalTile, SectionTile } from '@/components/home/section-tiles';
 import { AddSheet } from '@/components/add-sheet';
@@ -28,6 +29,7 @@ import {
   TASK_COLUMNS,
   ROUTINE_COLUMNS,
   ROUTINE_LOG_COLUMNS,
+  SLEEP_COLUMNS,
   goalProgress,
   isRoutineDueOn,
 } from '@/lib/data';
@@ -40,8 +42,9 @@ import {
   shiftDate,
 } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { formatSleepDuration } from '@/lib/sleep';
 import { supabase, supabaseConfigError } from '@/lib/supabase';
-import type { Goal, Routine, RoutineLog, Task } from '@/types/database';
+import type { Goal, Routine, RoutineLog, SleepLog, Task } from '@/types/database';
 
 const QUEUE_LENGTH = 4;
 const WEEK_LENGTH = 7;
@@ -100,6 +103,10 @@ export default function HomeScreen() {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routineLogs, setRoutineLogs] = useState<RoutineLog[]>([]);
   const [journalDates, setJournalDates] = useState<Set<string>>(() => new Set());
+  const [inboxCount, setInboxCount] = useState(0);
+  const [sleepToday, setSleepToday] = useState<SleepLog | null>(null);
+  const [timeTodayCount, setTimeTodayCount] = useState(0);
+  const [timeTodayMinutes, setTimeTodayMinutes] = useState(0);
   const [loading, setLoading] = useState(supabase !== null);
   const [refreshing, setRefreshing] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -111,19 +118,34 @@ export default function HomeScreen() {
 
   const load = useCallback(async () => {
     if (!supabase) return;
-    const [backlog, journal, goalRows, routineRows, logRows] = await Promise.all([
-      supabase.from('tasks').select(TASK_COLUMNS).eq('status', 'backlog'),
-      supabase
-        .from('journal_entries')
-        .select('entry_date')
-        .order('entry_date', { ascending: false })
-        .limit(400),
-      supabase.from('goals').select(GOAL_COLUMNS).order('created_at', { ascending: true }),
-      supabase.from('routines').select(ROUTINE_COLUMNS).eq('status', 'active').order('created_at', { ascending: true }),
-      supabase.from('routine_logs').select(ROUTINE_LOG_COLUMNS).eq('log_date', today),
-    ]);
+    const [backlog, journal, goalRows, routineRows, logRows, inboxRows, sleepRow, timeRows] =
+      await Promise.all([
+        supabase.from('tasks').select(TASK_COLUMNS).eq('status', 'backlog'),
+        supabase
+          .from('journal_entries')
+          .select('entry_date')
+          .order('entry_date', { ascending: false })
+          .limit(400),
+        supabase.from('goals').select(GOAL_COLUMNS).order('created_at', { ascending: true }),
+        supabase
+          .from('routines')
+          .select(ROUTINE_COLUMNS)
+          .eq('status', 'active')
+          .order('created_at', { ascending: true }),
+        supabase.from('routine_logs').select(ROUTINE_LOG_COLUMNS).eq('log_date', today),
+        supabase.from('inbox_items').select('id', { count: 'exact', head: true }).eq('status', 'new'),
+        supabase.from('sleep_logs').select(SLEEP_COLUMNS).eq('wake_date', today).maybeSingle(),
+        supabase.from('time_entries').select('duration_minutes').eq('entry_date', today),
+      ]);
     const failure =
-      backlog.error ?? journal.error ?? goalRows.error ?? routineRows.error ?? logRows.error;
+      backlog.error ??
+      journal.error ??
+      goalRows.error ??
+      routineRows.error ??
+      logRows.error ??
+      inboxRows.error ??
+      sleepRow.error ??
+      timeRows.error;
     if (failure) {
       setError(failure.message);
     } else {
@@ -132,6 +154,11 @@ export default function HomeScreen() {
       setGoals(goalRows.data ?? []);
       setRoutines(routineRows.data ?? []);
       setRoutineLogs(logRows.data ?? []);
+      setInboxCount(inboxRows.count ?? 0);
+      setSleepToday(sleepRow.data ?? null);
+      const timeData = timeRows.data ?? [];
+      setTimeTodayCount(timeData.length);
+      setTimeTodayMinutes(timeData.reduce((sum, row) => sum + row.duration_minutes, 0));
       setError(null);
     }
     setLoading(false);
@@ -321,6 +348,27 @@ export default function HomeScreen() {
             subtitle: 'Zachyť dnešek',
             onPress: () => openJournalEditor(today),
           },
+          {
+            icon: 'bulb',
+            color: colors.inbox,
+            title: 'Nápad do schránky',
+            subtitle: 'Zachytíš to a zpracuješ později',
+            onPress: () => router.push('/new-inbox'),
+          },
+          {
+            icon: 'moon',
+            color: colors.sleep,
+            title: 'Zápis spánku',
+            subtitle: 'Kdy jsi spal a jak ses vyspal',
+            onPress: () => router.push('/sleep-log'),
+          },
+          {
+            icon: 'time',
+            color: colors.time,
+            title: 'Skutečný čas',
+            subtitle: 'Potvrď nebo uprav čas za den',
+            onPress: () => router.push('/time-review'),
+          },
         ]}
       />
       <ScrollView
@@ -417,6 +465,72 @@ export default function HomeScreen() {
                 onPress={() => openTab('/goals')}
               />
             </View>
+
+            <View style={styles.tiles}>
+              <LifeTile
+                icon="inbox"
+                color={colors.inbox}
+                label="Schránka"
+                value={inboxCount}
+                caption={inboxCount > 0 ? 'čeká na zpracování' : 'prázdná'}
+                onPress={() => {
+                  haptic.light();
+                  router.push('/inbox');
+                }}
+              />
+              <LifeTile
+                icon="time"
+                color={colors.time}
+                label="Čas"
+                value={timeTodayCount > 0 ? formatMinutes(timeTodayMinutes) : '—'}
+                caption={timeTodayCount > 0 ? `${timeTodayCount} záznamů dnes` : 'potvrdit večer'}
+                onPress={() => {
+                  haptic.light();
+                  router.push('/time-review');
+                }}
+              />
+            </View>
+
+            {!sleepToday ? (
+              <LifePrompt
+                icon="moon"
+                color={colors.sleep}
+                title="Jak ses vyspal?"
+                caption="Zapiš usnutí, vstávání a kvalitu 1–5."
+                onPress={() => {
+                  haptic.light();
+                  router.push('/sleep-log');
+                }}
+              />
+            ) : (
+              <LifePrompt
+                icon="moon"
+                color={colors.sleep}
+                title={`Spánek · ${formatSleepDuration(sleepToday.duration_minutes) ?? 'zapsáno'}`}
+                caption={
+                  sleepToday.quality
+                    ? `Kvalita ${sleepToday.quality}/5 — klepni pro úpravu`
+                    : 'Klepni pro úpravu'
+                }
+                onPress={() => {
+                  haptic.light();
+                  router.push('/sleep-log');
+                }}
+              />
+            )}
+
+            {timeTodayCount > 0 ? (
+              <LifePrompt
+                icon="time"
+                color={colors.time}
+                title="Potvrdit dnešní čas"
+                caption={`${formatMinutes(timeTodayMinutes)} napříč ${timeTodayCount} záznamy · plán vs. realita`}
+                onPress={() => {
+                  haptic.light();
+                  router.push('/time-review');
+                }}
+              />
+            ) : null}
 
             <RoutinesTile
               items={todayRoutines}
